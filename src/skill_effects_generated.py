@@ -1,7 +1,7 @@
 """
-skill_effects_generated.py — 自动生成，请勿手动编辑
+skill_effects_generated.py - 自动生成，请勿手动编辑。
 
-由 scripts/generate_skill_effects.py 从数据库描述批量转换。
+由 scripts/generate_skill_effects.py 从数据库 description 批量生成。
 """
 
 from src.effect_models import E, EffectTag
@@ -10,7 +10,7 @@ from src.effect_data import T, on_attack, on_status, on_defense
 SKILL_EFFECTS_GENERATED = {
     "一拳": [T(E.DAMAGE)],
     "三连破": [T(E.SELF_BUFF, atk=0.3)],
-    "三鼓作气": [],
+    "三鼓作气": [T(E.SELF_BUFF, atk=0.3)],
     "不动如山": [T(E.DAMAGE_REDUCTION, pct=0.9)],
     "不可接触": [
         T(E.DAMAGE_REDUCTION, pct=0.5),
@@ -20,7 +20,6 @@ SKILL_EFFECTS_GENERATED = {
         T(E.DAMAGE),
         T(E.SELF_BUFF, speed=-0.3),
     ],
-    "丰饶": [],
     "主场优势": [],
     "主轴": [T(E.DAMAGE)],
     "乘胜追击": [T(E.DAMAGE)],
@@ -288,7 +287,7 @@ SKILL_EFFECTS_GENERATED = {
     "极速冷冻": [T(E.ENEMY_ENERGY_COST_UP, amount=2)],
     "极限撕裂": [T(E.DAMAGE)],
     "架势": [T(E.HEAL_HP, pct=0.2)],
-    "柔弱": [],
+    "柔弱": [T(E.ENEMY_DEBUFF, {"def": 0.7}, atk=0.7)],
     "根吸收": [T(E.HEAL_HP, pct=0.15)],
     "栽赃": [T(E.DAMAGE)],
     "械斗": [T(E.DAMAGE)],
@@ -327,16 +326,12 @@ SKILL_EFFECTS_GENERATED = {
     "水炮": [T(E.DAMAGE)],
     "水花四溅": [T(E.DAMAGE)],
     "求雨": [T(E.WEATHER, type='rain', turns=8)],
-    "汲取": [
-        T(E.DAMAGE),
-        T(E.LIFE_DRAIN, pct=1.0),
-    ],
     "沙涌": [T(E.WEATHER, type="sandstorm", turns=8)],
     "泡沫": [T(E.DAMAGE)],
     "泥巴喷射": [T(E.DAMAGE)],
     "泥沼": [],
     "泥浆": [T(E.DAMAGE)],
-    "泥浆铠甲": [],
+    "泥浆铠甲": [T(E.SELF_BUFF, {"def": 0.4}, atk=0.4)],
     "洗礼": [
         T(E.SKILL_MOD, target='self', stat='cost', value=-1),
         T(E.CLEANSE, target='self', mode='debuffs'),
@@ -404,7 +399,7 @@ SKILL_EFFECTS_GENERATED = {
     "爆裂飞弹": [T(E.DAMAGE)],
     "牵连": [T(E.DAMAGE)],
     "猛烈撞击": [T(E.DAMAGE)],
-    "玩具乐园": [],
+    "玩具乐园": [T(E.SELF_BUFF, speed=0.2)],
     "球状闪电": [T(E.DAMAGE)],
     "甜心续航": [T(E.HEAL_HP, pct=0.4)],
     "生日蛋糕": [],
@@ -415,7 +410,6 @@ SKILL_EFFECTS_GENERATED = {
     "疾风刺": [T(E.DAMAGE)],
     "疾风涡轮": [T(E.DAMAGE)],
     "瘴气喷射": [T(E.DAMAGE)],
-    "盐水浴": [],
     "盛开": [
         T(E.SKILL_MOD, target='self', stat='power_pct', value=0.3),
         on_defense(T(E.SKILL_MOD, target='self', stat='power_pct', value=0.7)),
@@ -432,7 +426,7 @@ SKILL_EFFECTS_GENERATED = {
     "破罐破摔": [T(E.DAMAGE)],
     "破防": [T(E.ENEMY_DEBUFF, all_def=1.3)],
     "硬化": [T(E.DAMAGE_REDUCTION, pct=0.9)],
-    "硬门": [],
+    "硬门": [on_attack(T(E.INTERRUPT))],
     "碎冰冰": [
         T(E.DAMAGE),
         T(E.FREEZE, stacks=1),
@@ -557,10 +551,6 @@ SKILL_EFFECTS_GENERATED = {
         T(E.DAMAGE_REDUCTION, pct=0.7),
         T(E.HEAL_ENERGY, amount=3),
     ],
-    "蝙蝠": [
-        T(E.DAMAGE),
-        T(E.LIFE_DRAIN, pct=1.0),
-    ],
     "血气": [T(E.DAMAGE_REDUCTION, pct=0.6)],
     "裂石": [
         T(E.DAMAGE),
@@ -625,7 +615,6 @@ SKILL_EFFECTS_GENERATED = {
     "钢钻": [],
     "钢铁洪流": [T(E.DAMAGE)],
     "钧势": [T(E.SELF_BUFF, {"def": 1.4})],
-    "锐利眼神": [],
     "错乱": [
         T(E.DAMAGE),
         T(E.METEOR, stacks=3),
