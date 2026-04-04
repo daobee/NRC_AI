@@ -386,6 +386,7 @@ class BattleState:
     # 本回合敌方是否换人 (嘲弄条件增益用)
     switch_this_turn_a: bool = False
     switch_this_turn_b: bool = False
+    battle_start_effects_triggered: bool = False
 
     def get_current(self, team: str) -> Pokemon:
         if team == "a":
@@ -404,5 +405,6 @@ class BattleState:
             counter_count_b=self.counter_count_b,
             switch_this_turn_a=self.switch_this_turn_a,
             switch_this_turn_b=self.switch_this_turn_b,
+            battle_start_effects_triggered=self.battle_start_effects_triggered,
         )
         return bs

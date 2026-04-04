@@ -128,6 +128,41 @@ def auto_switch(state: BattleState, switch_cb_a=None, switch_cb_b=None) -> None:
             else:
                 state.current_b = alive[0]
 
+    _trigger_battle_start_effects(state)
+
+
+def _trigger_battle_start_effects(state: BattleState) -> None:
+    """只触发一次的开局特性。"""
+    if state.battle_start_effects_triggered:
+        return
+    state.battle_start_effects_triggered = True
+
+    current_a = state.team_a[state.current_a]
+    current_b = state.team_b[state.current_b]
+
+    if current_a.ability_effects and not current_a.is_fainted:
+        EffectExecutor.execute_ability(
+            state, current_a, current_b, Timing.ON_BATTLE_START,
+            current_a.ability_effects, "a",
+        )
+    if current_b.ability_effects and not current_b.is_fainted:
+        EffectExecutor.execute_ability(
+            state, current_b, current_a, Timing.ON_BATTLE_START,
+            current_b.ability_effects, "b",
+        )
+
+
+def _trigger_ally_counter_effects(state: BattleState, team: str, enemy: Pokemon) -> None:
+    """同队任意精灵应对成功后，触发该队的 ON_ALLY_COUNTER 特性。"""
+    team_list = state.team_a if team == "a" else state.team_b
+    for p in team_list:
+        if p.is_fainted or not p.ability_effects:
+            continue
+        EffectExecutor.execute_ability(
+            state, p, enemy, Timing.ON_ALLY_COUNTER,
+            p.ability_effects, team,
+        )
+
 
 def turn_end_effects(state: BattleState) -> None:
     """回合结束：状态伤害结算 + 特性触发 (规则 v0.2)"""
@@ -291,6 +326,8 @@ def execute_full_turn(state: BattleState, action_a: Action, action_b: Action,
       精灵倒下后让玩家/AI选择下一只上场精灵。
     """
     # 湿润印记：回合开始时应用全队能耗减少
+    _trigger_battle_start_effects(state)
+
     _apply_moisture_mark(state)
 
     p_a = state.team_a[state.current_a]
@@ -464,9 +501,15 @@ def _execute_new_engine(state: BattleState, team: str, enemy_team: str,
     # 应对解析 (我方技能有 COUNTER_*，如毒液渗透/偷袭等)
     if enemy_skill and not enemy.is_fainted and result["counter_effects"]:
         for counter_tag in result["counter_effects"]:
+            pre_counter_count = state.counter_count_a if team == "a" else state.counter_count_b
             counter_result = EffectExecutor.execute_counter(
                 state, current, enemy, skill, counter_tag,
                 enemy_skill, damage, team,
+            )
+
+            counter_succeeded = (
+                (state.counter_count_a if team == "a" else state.counter_count_b)
+                > pre_counter_count
             )
 
             if counter_result:  # 应对成功
@@ -481,6 +524,8 @@ def _execute_new_engine(state: BattleState, team: str, enemy_team: str,
             if counter_result.get("interrupted"):
                 result["interrupted"] = True
 
+            if counter_succeeded:
+                _trigger_ally_counter_effects(state, team, enemy)
             if counter_result.get("force_switch"):
                 result["force_switch"] = True
 
@@ -492,9 +537,16 @@ def _execute_new_engine(state: BattleState, team: str, enemy_team: str,
     if enemy_skill and hasattr(enemy_skill, "effects") and enemy_skill.effects:
         for etag in enemy_skill.effects:
             if etag.type in (E.COUNTER_ATTACK, E.COUNTER_STATUS, E.COUNTER_DEFENSE):
+                pre_counter_count = (
+                    state.counter_count_a if enemy_team == "a" else state.counter_count_b
+                )
                 counter_result = EffectExecutor.execute_counter(
                     state, enemy, current, enemy_skill, etag,
                     skill, original_damage, enemy_team,   # 传入原始伤害（非已减伤值）
+                )
+                counter_succeeded = (
+                    (state.counter_count_a if enemy_team == "a" else state.counter_count_b)
+                    > pre_counter_count
                 )
 
                 if counter_result:  # 应对成功
@@ -507,6 +559,8 @@ def _execute_new_engine(state: BattleState, team: str, enemy_team: str,
                                 from src.effect_engine import _apply_permanent_mod
                                 _apply_permanent_mod(current, s, tag.params)
 
+                if counter_succeeded:
+                    _trigger_ally_counter_effects(state, enemy_team, current)
                 if counter_result.get("force_enemy_switch"):
                     # 吓退: 强制我方脱离
                     alive = [i for i, p in enumerate(team_list)
