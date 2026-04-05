@@ -561,10 +561,58 @@ def _apply_moisture_mark(state: BattleState) -> None:
         marks["moisture_mark"] = 0   # 消耗印记，效果已永久写入技能
 
 
+def _get_skill_for_action(state: BattleState, team: str, action: Action) -> Optional[Skill]:
+    """从 action 中获取技能对象，换人/跳过返回 None。"""
+    if action[0] < 0:
+        return None
+    team_list = state.team_a if team == "a" else state.team_b
+    idx = state.current_a if team == "a" else state.current_b
+    pokemon = team_list[idx]
+    if action[0] >= len(pokemon.skills):
+        return None
+    return pokemon.skills[action[0]]
+
+
+def _skill_has_counter_for(skill_a, skill_b) -> bool:
+    """检查 skill_a 是否有对 skill_b 类型的应对。"""
+    if not skill_a or not skill_b:
+        return False
+    from src.effect_models import SkillEffect as _SE, SkillTiming as _ST
+    cat_map = {
+        SkillCategory.PHYSICAL: "attack",
+        SkillCategory.MAGICAL: "attack",
+        SkillCategory.STATUS: "status",
+        SkillCategory.DEFENSE: "defense",
+    }
+    enemy_cat = cat_map.get(skill_b.category, "")
+    if not enemy_cat:
+        return False
+    for item in getattr(skill_a, "effects", []):
+        if isinstance(item, _SE) and item.timing == _ST.ON_COUNTER:
+            counter_cat = item.filter.get("category", "")
+            if counter_cat == enemy_cat or not counter_cat:
+                return True
+        elif hasattr(item, "type"):
+            from src.effect_models import E
+            type_to_cat = {
+                E.COUNTER_ATTACK: "attack",
+                E.COUNTER_STATUS: "status",
+                E.COUNTER_DEFENSE: "defense",
+            }
+            if type_to_cat.get(item.type) == enemy_cat:
+                return True
+    return False
+
+
 def execute_full_turn(state: BattleState, action_a: Action, action_b: Action,
                       switch_cb_a=None, switch_cb_b=None) -> None:
     """
     执行完整回合。
+
+    应对机制：
+    - 如果 A 的技能有对 B 技能类型的应对 → A 应对 B → B 先动但 A 的应对先结算
+    - 如果双方互相应对 → 按正常先手顺序
+    - 应对无视速度和先手等级
 
     switch_cb_a/b: 被动换人回调 (state, team_list, alive_indices) -> int
       精灵倒下后让玩家/AI选择下一只上场精灵。
@@ -582,13 +630,31 @@ def execute_full_turn(state: BattleState, action_a: Action, action_b: Action,
     state.switch_this_turn_a = False
     state.switch_this_turn_b = False
 
-    # 出招顺序：先手等级 > 当前有效速度 > 随机
-    if _compare_action_order(state, action_a, action_b) == -1:
+    # 获取双方技能
+    skill_a = _get_skill_for_action(state, "a", action_a)
+    skill_b = _get_skill_for_action(state, "b", action_b)
+
+    # 应对检测
+    a_counters_b = _skill_has_counter_for(skill_a, skill_b)
+    b_counters_a = _skill_has_counter_for(skill_b, skill_a)
+
+    if a_counters_b and not b_counters_a:
+        # A 应对 B → B 先动（被应对方先释放），A 后动
+        # 但 A 的应对效果会在 B 释放过程中先结算
+        first_team, second_team = "b", "a"
+        first_act, second_act = action_b, action_a
+    elif b_counters_a and not a_counters_b:
+        # B 应对 A → A 先动（被应对方先释放），B 后动
         first_team, second_team = "a", "b"
         first_act, second_act = action_a, action_b
     else:
-        first_team, second_team = "b", "a"
-        first_act, second_act = action_b, action_a
+        # 无应对 / 双方互相应对 → 正常先手判定
+        if _compare_action_order(state, action_a, action_b) == -1:
+            first_team, second_team = "a", "b"
+            first_act, second_act = action_a, action_b
+        else:
+            first_team, second_team = "b", "a"
+            first_act, second_act = action_b, action_a
 
     # 先手行动
     _execute_with_counter(state, first_team, first_act, second_team, second_act, is_first=True)
