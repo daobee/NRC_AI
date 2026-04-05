@@ -94,6 +94,13 @@ class E(Enum):
     BURN_NO_DECAY = auto()           # 标记: 灼烧本回合不衰减（燃薪虫煤渣草）
     POWER_MULTIPLIER_BUFF = auto()   # 独立威力提升乘法层 params: {"multiplier": 1.5}
 
+    # ── 特性专用原语（数据驱动） ──
+    THREAT_SPEED_BUFF = auto()              # 预警/哨兵: 敌方有击杀威胁时速度加成 params: {"speed": 0.5, "force_switch": false}
+    COUNTER_ACCUMULATE_TRANSFORM = auto()   # 保卫: 应对成功计数→变身 params: {"threshold": 2, "category_filter": "防御"}
+    DELAYED_REVIVE = auto()                 # 不朽: 力竭后延迟复活 params: {"turns": 3}
+    COPY_SWITCH_STATE = auto()              # 贪婪: 敌方换人时复制状态 params: {}
+    COST_INVERT = auto()                    # 对流: 能耗增减反转（被动标记）params: {}
+
     # ── 复合 / 特殊 ──
     REPLAY_AGILITY = auto()          # 重放迅捷技能 params: {} (疾风连袭)
     ENERGY_COST_ACCUMULATE = auto()  # 每次使用后能耗+N  params: {"delta":1}
@@ -110,6 +117,7 @@ class Timing(Enum):
     ON_FAINT = auto()            # 自身力竭时
     ON_KILL = auto()             # 击败敌方时
     ON_BE_KILLED = auto()        # 被敌方击败时
+    ON_TURN_START = auto()       # 回合开始（行动前）
     ON_TURN_END = auto()         # 回合结束时
     ON_USE_SKILL = auto()        # 使用技能后 (可按系别过滤)
     ON_COUNTER_SUCCESS = auto()  # 应对成功时

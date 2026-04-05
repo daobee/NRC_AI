@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.battle import execute_full_turn
 from src.effect_models import E, EffectTag
 from src.models import BattleState, Pokemon, Skill, SkillCategory, Type
+from src.skill_db import load_ability_effects
 
 
 def make_skill(name, power=0, energy=0, skill_type=Type.NORMAL,
@@ -22,7 +23,7 @@ def make_skill(name, power=0, energy=0, skill_type=Type.NORMAL,
 
 def make_pokemon(name="test", hp=300, attack=100, defense=80, spatk=100,
                  spdef=80, speed=100, ptype=Type.NORMAL, skills=None, ability=""):
-    return Pokemon(
+    p = Pokemon(
         name=name,
         pokemon_type=ptype,
         hp=hp,
@@ -34,6 +35,15 @@ def make_pokemon(name="test", hp=300, attack=100, defense=80, spatk=100,
         skills=skills or [],
         ability=ability,
     )
+    # 加载特性效果（数据驱动）
+    if ability:
+        p.ability_effects = load_ability_effects(ability)
+        # 初始化被动标记（对流等）
+        for ae in p.ability_effects:
+            for tag in ae.effects:
+                if tag.type == E.COST_INVERT:
+                    p.ability_state["cost_invert"] = True
+    return p
 
 
 def test_undying_revives_full_hp_after_three_turns_without_auto_switching():

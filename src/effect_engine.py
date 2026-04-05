@@ -161,7 +161,8 @@ def _ability_name(pokemon: "Pokemon") -> str:
 
 
 def _adjust_cost_delta(pokemon: "Pokemon", delta: int) -> int:
-    return -delta if _ability_name(pokemon) == "对流" else delta
+    """能耗增减调整：对流特性反转增减方向"""
+    return -delta if pokemon.ability_state.get("cost_invert") else delta
 
 
 def _apply_permanent_mod(user: "Pokemon", skill: "Skill", params: Dict,
@@ -708,6 +709,73 @@ def _h_power_multiplier_buff(tag: EffectTag, ctx: Ctx) -> None:
     ctx.user.power_multiplier *= tag.params.get("multiplier", 1.0)
 
 
+# ── 特性专用 handler（从 battle.py 硬编码迁移）──
+
+def _h_threat_speed_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """THREAT_SPEED_BUFF: 预警/哨兵 — 敌方有击杀威胁时速度加成"""
+    from src.battle import _has_ko_threat
+    pokemon = ctx.user
+    enemy = ctx.target
+    # 清除上回合的临时标记
+    pokemon.ability_state.pop("threat_speed_bonus_active", None)
+    pokemon.ability_state.pop("force_switch_after_action", None)
+    if _has_ko_threat(enemy, pokemon):
+        speed_val = tag.params.get("speed", 0.5)
+        pokemon.speed_up += speed_val
+        pokemon.ability_state["threat_speed_bonus_active"] = True
+        if tag.params.get("force_switch", False):
+            pokemon.ability_state["force_switch_after_action"] = True
+
+
+def _h_counter_accumulate_transform(tag: EffectTag, ctx: Ctx) -> None:
+    """COUNTER_ACCUMULATE_TRANSFORM: 保卫 — 应对成功计数，达阈值变身棋绮后"""
+    from src.battle import _transform_to_guard_queen
+    pokemon = ctx.user
+    skill = ctx.result.get("_counter_skill") or getattr(ctx, "skill", None)
+    # 按 category_filter 过滤（默认只有防御类技能触发）
+    cat_filter = tag.params.get("category_filter", "")
+    if cat_filter and skill:
+        from src.models import SkillCategory
+        if skill.category != SkillCategory(cat_filter):
+            return
+    # 每回合只计数一次
+    if pokemon.ability_state.get("guard_counter_turn") == ctx.state.turn:
+        return
+    pokemon.ability_state["guard_counter_turn"] = ctx.state.turn
+    count = pokemon.ability_state.get("guard_counters", 0) + 1
+    pokemon.ability_state["guard_counters"] = count
+    threshold = tag.params.get("threshold", 2)
+    if count >= threshold:
+        pokemon.ability_state["guard_counters"] = 0
+        defer = ctx.result.get("_defer_transform", False)
+        if defer:
+            pokemon.ability_state["guard_transform_pending"] = True
+        else:
+            _transform_to_guard_queen(pokemon)
+
+
+def _h_delayed_revive(tag: EffectTag, ctx: Ctx) -> None:
+    """DELAYED_REVIVE: 不朽 — 力竭时设置延迟复活计时器"""
+    turns = tag.params.get("turns", 3)
+    ctx.user.ability_state["undying_revive_in"] = turns
+
+
+def _h_copy_switch_state(tag: EffectTag, ctx: Ctx) -> None:
+    """COPY_SWITCH_STATE: 贪婪 — 敌方换人时复制离场精灵状态到入场精灵"""
+    from src.battle import _transfer_pokemon_state
+    context = ctx.result if isinstance(ctx.result, dict) else {}
+    # context 由 battle.py 的 execute_ability 调用传入
+    snapshot = context.get("switch_snapshot")
+    switched_in = context.get("switched_in")
+    if snapshot and switched_in:
+        _transfer_pokemon_state(snapshot, switched_in)
+
+
+def _h_cost_invert(tag: EffectTag, ctx: Ctx) -> None:
+    """COST_INVERT: 对流 — 设置能耗反转被动标记"""
+    ctx.user.ability_state["cost_invert"] = True
+
+
 # ── 注册表 ──
 _HANDLERS: Dict[E, Callable] = {
     E.DAMAGE:                   _h_damage,
@@ -761,6 +829,11 @@ _HANDLERS: Dict[E, Callable] = {
     E.TRANSFER_MODS:                _h_transfer_mods,
     E.BURN_NO_DECAY:                _h_burn_no_decay,
     E.POWER_MULTIPLIER_BUFF:        _h_power_multiplier_buff,
+    E.THREAT_SPEED_BUFF:            _h_threat_speed_buff,
+    E.COUNTER_ACCUMULATE_TRANSFORM: _h_counter_accumulate_transform,
+    E.DELAYED_REVIVE:               _h_delayed_revive,
+    E.COPY_SWITCH_STATE:            _h_copy_switch_state,
+    E.COST_INVERT:                  _h_cost_invert,
 }
 
 # 特性中部分 handler 与技能略有不同，按 tag type 覆盖
@@ -774,6 +847,11 @@ _ABILITY_HANDLER_OVERRIDES: Dict[E, Callable] = {
     E.TRANSFER_MODS:             _h_transfer_mods,
     E.BURN_NO_DECAY:             _h_burn_no_decay,
     E.POWER_MULTIPLIER_BUFF:     _h_power_multiplier_buff,
+    E.THREAT_SPEED_BUFF:         _h_threat_speed_buff,
+    E.COUNTER_ACCUMULATE_TRANSFORM: _h_counter_accumulate_transform,
+    E.DELAYED_REVIVE:            _h_delayed_revive,
+    E.COPY_SWITCH_STATE:         _h_copy_switch_state,
+    E.COST_INVERT:               _h_cost_invert,
 }
 
 

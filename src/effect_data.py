@@ -324,4 +324,42 @@ ABILITY_EFFECTS = {
             T(E.PERMANENT_MOD, target="power", delta=30),
         ], positions=[0, 1]),
     ],
+
+    # ── 从 battle.py 硬编码迁移的特性 ──
+
+    # 预警：回合开始时，若敌方有击杀威胁，速度+50%（回合结束自动清除）
+    "预警": [
+        AE(Timing.ON_TURN_START,
+           [T(E.THREAT_SPEED_BUFF, speed=0.5, force_switch=False)]),
+    ],
+
+    # 哨兵：同预警 + 行动后强制换人
+    "哨兵": [
+        AE(Timing.ON_TURN_START,
+           [T(E.THREAT_SPEED_BUFF, speed=0.5, force_switch=True)]),
+    ],
+
+    # 保卫：防御类技能应对成功累计2次 → 变身棋绮后
+    "保卫": [
+        AE(Timing.ON_COUNTER_SUCCESS,
+           [T(E.COUNTER_ACCUMULATE_TRANSFORM, threshold=2, category_filter="防御")]),
+    ],
+
+    # 不朽：力竭时设置3回合后复活计时器
+    "不朽": [
+        AE(Timing.ON_FAINT,
+           [T(E.DELAYED_REVIVE, turns=3)]),
+    ],
+
+    # 贪婪：敌方换人时，复制离场精灵的所有状态到入场精灵
+    "贪婪": [
+        AE(Timing.ON_ENEMY_SWITCH,
+           [T(E.COPY_SWITCH_STATE)]),
+    ],
+
+    # 对流：被动标记，所有能耗减少效果反转为增加
+    "对流": [
+        AE(Timing.PASSIVE,
+           [T(E.COST_INVERT)]),
+    ],
 }

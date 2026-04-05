@@ -38,23 +38,20 @@ def _has_ko_threat(attacker: Pokemon, defender: Pokemon) -> bool:
 
 
 def _apply_turn_start_ability_logic(state: BattleState) -> None:
+    """回合开始：触发双方 ON_TURN_START 特性（预警/哨兵等）"""
     pairs = [
-        (state.team_a[state.current_a], state.team_b[state.current_b]),
-        (state.team_b[state.current_b], state.team_a[state.current_a]),
+        (state.team_a, state.current_a, state.team_b, state.current_b, "a"),
+        (state.team_b, state.current_b, state.team_a, state.current_a, "b"),
     ]
-    for current, enemy in pairs:
-        if current.is_fainted:
+    for my_team, my_idx, enemy_team, enemy_idx, team_id in pairs:
+        current = my_team[my_idx]
+        if current.is_fainted or not current.ability_effects:
             continue
-        current.ability_state.pop("threat_speed_bonus_active", None)
-        current.ability_state.pop("force_switch_after_action", None)
-        name = _ability_name(current)
-        if name not in {"预警", "哨兵"}:
-            continue
-        if _has_ko_threat(enemy, current):
-            current.speed_up += 0.5
-            current.ability_state["threat_speed_bonus_active"] = True
-            if name == "哨兵":
-                current.ability_state["force_switch_after_action"] = True
+        enemy = enemy_team[enemy_idx]
+        EffectExecutor.execute_ability(
+            state, current, enemy, Timing.ON_TURN_START,
+            current.ability_effects, team_id,
+        )
 
 
 def _clear_turn_temporary_ability_logic(state: BattleState) -> None:
@@ -124,19 +121,19 @@ def _transform_to_guard_queen(pokemon: Pokemon) -> None:
 def _handle_counter_success_ability(
     state: BattleState, pokemon: Pokemon, skill: Skill, defer_transform: bool = False
 ) -> None:
-    if _ability_name(pokemon) != "保卫" or skill.category != SkillCategory.DEFENSE:
+    """应对成功时触发特性（保卫等），通过数据驱动的 ON_COUNTER_SUCCESS"""
+    if not pokemon.ability_effects:
         return
-    if pokemon.ability_state.get("guard_counter_turn") == state.turn:
-        return
-    pokemon.ability_state["guard_counter_turn"] = state.turn
-    count = pokemon.ability_state.get("guard_counters", 0) + 1
-    pokemon.ability_state["guard_counters"] = count
-    if count >= 2:
-        pokemon.ability_state["guard_counters"] = 0
-        if defer_transform:
-            pokemon.ability_state["guard_transform_pending"] = True
-        else:
-            _transform_to_guard_queen(pokemon)
+    # 确定对手
+    enemy_list = state.team_b if pokemon in state.team_a else state.team_a
+    enemy_idx = state.current_b if pokemon in state.team_a else state.current_a
+    enemy = enemy_list[enemy_idx]
+    team = "a" if pokemon in state.team_a else "b"
+    EffectExecutor.execute_ability(
+        state, pokemon, enemy, Timing.ON_COUNTER_SUCCESS,
+        pokemon.ability_effects, team,
+        context={"_counter_skill": skill, "_defer_transform": defer_transform},
+    )
 
 
 def _process_revive_timers(state: BattleState) -> None:
@@ -477,13 +474,16 @@ def _check_fainted_and_deduct_mp(state: BattleState) -> None:
     if pa.is_fainted and not pa.ability_state.get("faint_processed"):
         pa.ability_state["faint_processed"] = True
         state.mp_a -= 1
-        if _ability_name(pa) == "不朽":
-            pa.ability_state["undying_revive_in"] = 3
+        # 触发 ON_FAINT 特性（不朽等）
+        if pa.ability_effects:
+            EffectExecutor.execute_ability(
+                state, pa, pb, Timing.ON_FAINT, pa.ability_effects, "a")
     if pb.is_fainted and not pb.ability_state.get("faint_processed"):
         pb.ability_state["faint_processed"] = True
         state.mp_b -= 1
-        if _ability_name(pb) == "不朽":
-            pb.ability_state["undying_revive_in"] = 3
+        if pb.ability_effects:
+            EffectExecutor.execute_ability(
+                state, pb, pa, Timing.ON_FAINT, pb.ability_effects, "b")
 
 
 def _apply_moisture_mark(state: BattleState) -> None:
@@ -499,7 +499,7 @@ def _apply_moisture_mark(state: BattleState) -> None:
         for p in team_list:
             for s in p.skills:
                 delta = -stacks
-                if _ability_name(p) == "对流":
+                if p.ability_state.get("cost_invert"):
                     delta = -delta
                 s.energy_cost = max(0, s.energy_cost + delta)
         marks["moisture_mark"] = 0   # 消耗印记，效果已永久写入技能
@@ -619,15 +619,14 @@ def _execute_with_counter(state: BattleState, team: str, action: Action,
         # 迅捷：入场时自动释放带 agility 标记的技能
         EffectExecutor.execute_agility_entry(state, new_pokemon, enemy, team)
 
-        # 敌方特性: 对手换人时触发 (影狸下黑手)
+        # 敌方特性: 对手换人时触发 (影狸下黑手 / 贪婪等)
         if enemy.ability_effects:
             EffectExecutor.execute_ability(
                 state, enemy, new_pokemon, Timing.ON_ENEMY_SWITCH,
                 enemy.ability_effects, enemy_team,
-                context={"switched_out": old_pokemon, "switched_in": new_pokemon},
+                context={"switched_out": old_pokemon, "switched_in": new_pokemon,
+                         "switch_snapshot": switch_snapshot},
             )
-        if _ability_name(enemy) == "贪婪":
-            _transfer_pokemon_state(switch_snapshot, new_pokemon)
         return
 
     # 汇合聚能
@@ -654,7 +653,7 @@ def _execute_with_counter(state: BattleState, team: str, action: Action,
             if per == "enemy_poison":
                 refund = enemy.poison_stacks * reduce
                 dynamic_delta = -refund
-                if _ability_name(current) == "对流":
+                if current.ability_state.get("cost_invert"):
                     dynamic_delta = -dynamic_delta
                 actual_cost = max(0, actual_cost + dynamic_delta)
 
@@ -904,7 +903,7 @@ def _execute_new_engine(state: BattleState, team: str, enemy_team: str,
     energy_refund = result.get("_energy_refund", 0)
     if energy_refund > 0:
         delta = -energy_refund
-        if _ability_name(current) == "对流":
+        if current.ability_state.get("cost_invert"):
             delta = -delta
         skill.energy_cost = max(0, skill.energy_cost + delta)
 
@@ -992,6 +991,11 @@ class TeamBuilder:
                     sp_attack=spatk, sp_defense=spdef,
                     speed=spd, ability=ability, skills=skills)
         p.ability_effects = ability_effects
+        # 初始化被动标记（对流等需要在加载时就设置）
+        for ae in ability_effects:
+            for tag in ae.effects:
+                if tag.type == E.COST_INVERT:
+                    p.ability_state["cost_invert"] = True
         return p
 
     @staticmethod
