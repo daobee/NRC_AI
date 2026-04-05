@@ -286,6 +286,13 @@ SKILL_EFFECTS = {
         SE(SkillTiming.ON_USE, [T(E.PASSIVE_ENERGY_REDUCE, reduce=2, range="all")]),
         SE(SkillTiming.ON_COUNTER, [T(E.PASSIVE_ENERGY_REDUCE, reduce=1, range="all")], category="defense"),
     ],
+
+    # 魔能爆: 释放时消耗所有能量，消耗越多伤害越高 (每1点能量 = 30威力)
+    # TODO: 待游戏内实测确认 power_per_energy 系数
+    "魔能爆": [
+        SE(SkillTiming.PRE_USE, [T(E.ENERGY_ALL_IN, power_per_energy=30)]),
+        SE(SkillTiming.ON_USE,  [T(E.DAMAGE)]),
+    ],
 }
 
 

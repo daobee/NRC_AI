@@ -410,6 +410,17 @@ def _h_self_ko(tag: EffectTag, ctx: Ctx) -> None:
     ctx.result["_self_ko"] = True
 
 
+def _h_energy_all_in(tag: EffectTag, ctx: Ctx) -> None:
+    """ENERGY_ALL_IN: 消耗所有能量，威力按消耗量缩放（魔能爆）。
+    在 PRE_USE 阶段执行：把当前能量换算成威力加成，然后清空能量。
+    """
+    current_energy = ctx.user.energy
+    power_per_energy = tag.params.get("power_per_energy", 30)
+    if current_energy > 0:
+        ctx.result["_power_bonus"] = ctx.result.get("_power_bonus", 0) + current_energy * power_per_energy
+        ctx.user.energy = 0
+
+
 def _h_reset_skill_cost(tag: EffectTag, ctx: Ctx) -> None:
     ctx.skill.energy_cost = getattr(ctx.skill, "_base_energy_cost", ctx.skill.energy_cost)
 
@@ -1177,6 +1188,7 @@ _HANDLERS: Dict[E, Callable] = {
     E.HEAL_ENERGY:              _h_heal_energy,
     E.SELF_KO:                  _h_self_ko,
     E.RESET_SKILL_COST:         _h_reset_skill_cost,
+    E.ENERGY_ALL_IN:            _h_energy_all_in,
     E.STEAL_ENERGY:             _h_steal_energy,
     E.ENEMY_LOSE_ENERGY:        _h_enemy_lose_energy,
     E.LIFE_DRAIN:               _h_life_drain,

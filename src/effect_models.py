@@ -61,6 +61,9 @@ class E(Enum):
     CLEANSE = auto()                 # 清除增减益/状态 params: {"target":"self","mode":"buffs|debuffs|all"}
     SELF_KO = auto()                 # 结算后自身力竭 params: {}
     RESET_SKILL_COST = auto()        # 技能能耗重置为基础值 params: {}
+    ENERGY_ALL_IN = auto()           # 消耗所有能量，威力按消耗量缩放
+                                     # params: {"power_per_energy": 30}
+                                     # 实际威力 = 当前能量 × power_per_energy
 
     # ── 位置 / 传动 ──
     POSITION_BUFF = auto()           # 位置增益  params: {"positions":[0,2],"buff":{"atk":1.0}}

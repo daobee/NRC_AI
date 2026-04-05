@@ -410,6 +410,19 @@ session = BattleSession()
 # ═══════════════════════════════════════
 
 def serialize_pokemon(p, is_current=False):
+    # ability_state 中有意义的 UI 字段
+    ability_state = getattr(p, "ability_state", {}) or {}
+    ability_info = []
+    # 特性 buff 层数（如身经百练的应对计数）
+    if ability_state.get("guard_counters", 0) > 0:
+        ability_info.append(f"应对计数:{ability_state['guard_counters']}")
+    if ability_state.get("undying_revive_in", 0) > 0:
+        ability_info.append(f"复活倒计时:{ability_state['undying_revive_in']}")
+    if ability_state.get("threat_speed_bonus_active"):
+        ability_info.append("预警加速")
+    if ability_state.get("cost_invert"):
+        ability_info.append("能耗反转")
+
     return {
         "name":            p.name,
         "type":            p.pokemon_type.value,
@@ -425,11 +438,25 @@ def serialize_pokemon(p, is_current=False):
         "meteor_stacks":   p.meteor_stacks,
         "meteor_countdown":p.meteor_countdown,
         "charging":        p.charging_skill_idx >= 0,
+        # 净值（正=buff，负=debuff）
         "atk_mod":         round((p.atk_up - p.atk_down) * 100),
         "def_mod":         round((p.def_up - p.def_down) * 100),
         "spatk_mod":       round((p.spatk_up - p.spatk_down) * 100),
         "spdef_mod":       round((p.spdef_up - p.spdef_down) * 100),
         "speed_mod":       round((p.speed_up - p.speed_down) * 100),
+        # 分向数值（供前端分色显示）
+        "atk_up":    round(p.atk_up * 100),
+        "atk_down":  round(p.atk_down * 100),
+        "def_up":    round(p.def_up * 100),
+        "def_down":  round(p.def_down * 100),
+        "spatk_up":  round(p.spatk_up * 100),
+        "spatk_down":round(p.spatk_down * 100),
+        "spdef_up":  round(p.spdef_up * 100),
+        "spdef_down":round(p.spdef_down * 100),
+        "speed_up":  round(p.speed_up * 100),
+        "speed_down":round(p.speed_down * 100),
+        # 特性状态
+        "ability_info": ability_info,
         "skills":          [serialize_skill(s, p.energy, p.cooldowns.get(i, 0))
                             for i, s in enumerate(p.skills)] if is_current else [],
     }
