@@ -51,7 +51,7 @@ def _apply_turn_start_ability_logic(state: BattleState) -> None:
         if name not in {"预警", "哨兵"}:
             continue
         if _has_ko_threat(enemy, current):
-            current.speed_mod += 0.5
+            current.speed_up += 0.5
             current.ability_state["threat_speed_bonus_active"] = True
             if name == "哨兵":
                 current.ability_state["force_switch_after_action"] = True
@@ -60,17 +60,23 @@ def _apply_turn_start_ability_logic(state: BattleState) -> None:
 def _clear_turn_temporary_ability_logic(state: BattleState) -> None:
     for pokemon in state.team_a + state.team_b:
         if pokemon.ability_state.pop("threat_speed_bonus_active", None):
-            if pokemon.speed_mod >= 0.5:
-                pokemon.speed_mod -= 0.5
+            if pokemon.speed_up >= 0.5:
+                pokemon.speed_up -= 0.5
         pokemon.ability_state.pop("force_switch_after_action", None)
 
 
 def _transfer_pokemon_state(source: Pokemon, target: Pokemon) -> None:
-    target.atk_mod = source.atk_mod
-    target.def_mod = source.def_mod
-    target.spatk_mod = source.spatk_mod
-    target.spdef_mod = source.spdef_mod
-    target.speed_mod = source.speed_mod
+    target.atk_up = source.atk_up
+    target.atk_down = source.atk_down
+    target.def_up = source.def_up
+    target.def_down = source.def_down
+    target.spatk_up = source.spatk_up
+    target.spatk_down = source.spatk_down
+    target.spdef_up = source.spdef_up
+    target.spdef_down = source.spdef_down
+    target.speed_up = source.speed_up
+    target.speed_down = source.speed_down
+    target.power_multiplier = source.power_multiplier
     target.life_drain_mod = source.life_drain_mod
     target.skill_power_bonus = source.skill_power_bonus
     target.skill_power_pct_mod = source.skill_power_pct_mod
@@ -158,10 +164,11 @@ def _process_revive_timers(state: BattleState) -> None:
 # ============================================================
 class DamageCalculator:
 
-    # 天气修正表: {天气: {技能属性: 威力倍率}}
+    # 天气修正表（洛克王国真实天气：沙暴/雪天/雨天）
     _WEATHER_MULT: Dict[str, Dict[str, float]] = {
-        "sunny":     {"fire": 1.5, "water": 0.5},
-        "rain":      {"water": 1.5, "fire": 0.5},
+        "rain":      {"water": 1.5},   # 雨天：水系招式威力+50%，无其他效果
+        "sandstorm": {},               # 沙暴：无招式威力修正（回合伤害在 turn_end 处理）
+        "snow":      {},               # 雪天：无招式威力修正
     }
 
     @staticmethod
@@ -172,23 +179,35 @@ class DamageCalculator:
         if power <= 0:
             return 0
 
+        # 按技能类型选取方向字段
         if skill.category == SkillCategory.MAGICAL:
-            atk = attacker.effective_spatk()
-            dfn = defender.effective_spdef()
+            base_atk = attacker.sp_attack
+            base_def = defender.sp_defense
+            atk_up   = attacker.spatk_up
+            atk_down = attacker.spatk_down
+            def_up   = defender.spdef_up
+            def_down = defender.spdef_down
         else:
-            atk = attacker.effective_atk()
-            dfn = defender.effective_def()
+            base_atk = attacker.attack
+            base_def = defender.defense
+            atk_up   = attacker.atk_up
+            atk_down = attacker.atk_down
+            def_up   = defender.def_up
+            def_down = defender.def_down
 
-        if dfn < 1:
-            dfn = 1
+        # 能力等级 = (1 + 我方攻升 + 敌方防降) / (1 + 我方攻降 + 敌方防升)
+        ability_level = (1.0 + atk_up + def_down) / max(0.1, 1.0 + atk_down + def_up)
 
-        # 基础伤害 = 攻击/防御 * 威力 * 0.9
+        atk = base_atk * ability_level
+        dfn = max(1.0, float(base_def))
+
+        # 基础伤害 = (攻击/防御) × 威力 × 0.9
         base = (atk / dfn) * power * 0.9
 
         # 属性克制
         eff = get_type_effectiveness(skill.skill_type, defender.pokemon_type)
 
-        # 本系加成
+        # 本系加成 1.5x
         stab = 1.5 if skill.skill_type == attacker.pokemon_type else 1.0
 
         # 天气修正
@@ -201,7 +220,10 @@ class DamageCalculator:
         # 连击
         hits = hit_count_override or skill.hit_count
 
-        damage = base * eff * stab * weather_mult * hits
+        # 威力提升 buff（独立乘法层）
+        power_mult_buff = getattr(attacker, "power_multiplier", 1.0)
+
+        damage = base * eff * stab * weather_mult * hits * power_mult_buff
         return max(1, int(damage))
 
 
@@ -416,7 +438,7 @@ def turn_end_effects(state: BattleState) -> None:
             p.current_hp = 0
             p.status = StatusType.FAINTED
 
-    # 天气伤害/效果 (沙暴/冰雹每回合对非岩/地/钢系造成1/16 HP伤害；雪天双方获得2层冻结)
+    # 天气伤害/效果 (沙暴：对非地/钢系造成1/16 HP伤害；雪天双方获得2层冻结)
     if state.weather in ("sandstorm", "hail", "snow"):
         from src.effect_engine import _apply_weather_damage
         _apply_weather_damage(state)
@@ -576,11 +598,16 @@ def _execute_with_counter(state: BattleState, team: str, action: Action,
         # 洁癖: 传递属性修正
         if "transfer_mods" in transfer_ctx:
             mods = transfer_ctx["transfer_mods"]
-            new_pokemon.atk_mod += mods.get("atk_mod", 0)
-            new_pokemon.def_mod += mods.get("def_mod", 0)
-            new_pokemon.spatk_mod += mods.get("spatk_mod", 0)
-            new_pokemon.spdef_mod += mods.get("spdef_mod", 0)
-            new_pokemon.speed_mod += mods.get("speed_mod", 0)
+            new_pokemon.atk_up    += mods.get("atk_up", 0)
+            new_pokemon.atk_down  += mods.get("atk_down", 0)
+            new_pokemon.def_up    += mods.get("def_up", 0)
+            new_pokemon.def_down  += mods.get("def_down", 0)
+            new_pokemon.spatk_up  += mods.get("spatk_up", 0)
+            new_pokemon.spatk_down += mods.get("spatk_down", 0)
+            new_pokemon.spdef_up  += mods.get("spdef_up", 0)
+            new_pokemon.spdef_down += mods.get("spdef_down", 0)
+            new_pokemon.speed_up  += mods.get("speed_up", 0)
+            new_pokemon.speed_down += mods.get("speed_down", 0)
 
         # 特性: 入场触发
         if new_pokemon.ability_effects:
@@ -926,10 +953,10 @@ class TeamBuilder:
         "普通": Type.NORMAL, "火": Type.FIRE, "水": Type.WATER, "草": Type.GRASS,
         "电": Type.ELECTRIC, "冰": Type.ICE, "格斗": Type.FIGHTING, "毒": Type.POISON,
         "地面": Type.GROUND, "飞行": Type.FLYING, "超能": Type.PSYCHIC, "虫": Type.BUG,
-        "岩石": Type.ROCK, "幽灵": Type.GHOST, "龙": Type.DRAGON, "恶": Type.DARK,
+        "幽灵": Type.GHOST, "龙": Type.DRAGON, "恶": Type.DARK,
         "钢": Type.STEEL, "妖精": Type.FAIRY, "机械": Type.STEEL, "萌": Type.FAIRY,
         "翼": Type.FLYING, "武": Type.FIGHTING, "幽": Type.GHOST, "幻": Type.PSYCHIC,
-        "光": Type.ELECTRIC,
+        "光": Type.LIGHT,
     }
 
     @staticmethod

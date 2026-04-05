@@ -34,12 +34,12 @@ class Type(Enum):
     FLYING = "flying"
     PSYCHIC = "psychic"
     BUG = "bug"
-    ROCK = "rock"
     GHOST = "ghost"
     DRAGON = "dragon"
     DARK = "dark"
     STEEL = "steel"
     FAIRY = "fairy"
+    LIGHT = "light"
 
 
 class SkillCategory(Enum):
@@ -49,26 +49,26 @@ class SkillCategory(Enum):
     STATUS = "状态"
 
 
-# 属性克制表
+# 属性克制表（洛克王国真实数据，来自游戏内克制图表）
 TYPE_CHART: Dict[str, Dict[str, float]] = {
-    "normal": {"rock": 0.5, "ghost": 0, "steel": 0.5},
-    "fire": {"fire": 0.5, "water": 0.5, "grass": 2, "ice": 2, "bug": 2, "rock": 0.5, "dragon": 0.5, "steel": 2},
-    "water": {"fire": 2, "water": 0.5, "grass": 0.5, "ground": 2, "rock": 2, "dragon": 0.5},
-    "electric": {"water": 2, "electric": 0.5, "grass": 0.5, "ground": 0, "flying": 2, "dragon": 0.5},
-    "grass": {"fire": 0.5, "water": 2, "grass": 0.5, "poison": 0.5, "ground": 2, "flying": 0.5, "bug": 0.5, "rock": 2, "dragon": 0.5, "steel": 0.5},
-    "ice": {"fire": 0.5, "water": 0.5, "grass": 2, "ice": 0.5, "ground": 2, "flying": 2, "dragon": 2, "steel": 0.5},
-    "fighting": {"normal": 2, "ice": 2, "poison": 0.5, "flying": 0.5, "psychic": 0.5, "bug": 0.5, "rock": 2, "ghost": 0, "dark": 2, "steel": 2, "fairy": 0.5},
-    "poison": {"grass": 2, "poison": 0.5, "ground": 0.5, "rock": 0.5, "ghost": 0.5, "steel": 0, "fairy": 2},
-    "ground": {"fire": 2, "electric": 2, "grass": 0.5, "poison": 2, "flying": 0, "bug": 0.5, "rock": 2, "steel": 2},
-    "flying": {"electric": 0.5, "grass": 2, "fighting": 2, "bug": 2, "rock": 0.5, "steel": 0.5},
-    "psychic": {"fighting": 2, "poison": 2, "psychic": 0.5, "dark": 0, "steel": 0.5},
-    "bug": {"fire": 0.5, "grass": 2, "fighting": 0.5, "poison": 0.5, "flying": 0.5, "ghost": 0.5, "psychic": 2, "dark": 2, "steel": 0.5, "fairy": 0.5},
-    "rock": {"fire": 2, "ice": 2, "fighting": 0.5, "ground": 0.5, "flying": 2, "bug": 2, "steel": 0.5},
-    "ghost": {"normal": 0, "psychic": 2, "ghost": 2, "dark": 0.5},
-    "dragon": {"dragon": 2, "steel": 0.5, "fairy": 0},
-    "dark": {"fighting": 0.5, "psychic": 2, "ghost": 2, "dark": 0.5, "fairy": 0.5},
-    "steel": {"fire": 0.5, "water": 0.5, "electric": 0.5, "ice": 2, "rock": 2, "steel": 0.5, "fairy": 2},
-    "fairy": {"fire": 0.5, "fighting": 2, "poison": 0.5, "dragon": 2, "dark": 2, "steel": 0.5},
+    "normal":   {"ground": 0.5, "ghost": 0.5, "steel": 0.5},
+    "grass":    {"fire": 0.5, "water": 2, "light": 2, "ground": 2, "dragon": 0.5, "poison": 0.5, "bug": 0.5, "flying": 0.5, "steel": 0.5},
+    "fire":     {"grass": 2, "water": 0.5, "ground": 0.5, "ice": 2, "dragon": 0.5, "bug": 2, "steel": 2},
+    "water":    {"grass": 0.5, "fire": 2, "ground": 2, "ice": 0.5, "dragon": 0.5, "steel": 2},
+    "light":    {"grass": 0.5, "ice": 0.5, "ghost": 2, "dark": 2},
+    "ground":   {"grass": 0.5, "fire": 2, "ice": 2, "electric": 2, "poison": 2, "fighting": 0.5},
+    "ice":      {"grass": 2, "fire": 0.5, "ground": 2, "ice": 0.5, "dragon": 2, "flying": 2, "steel": 0.5},
+    "dragon":   {"dragon": 2, "steel": 0.5},
+    "electric": {"grass": 0.5, "water": 2, "ground": 0.5, "dragon": 0.5, "electric": 0.5, "flying": 2},
+    "poison":   {"grass": 2, "ground": 0.5, "poison": 0.5, "fairy": 2, "ghost": 0.5, "steel": 0.5},
+    "bug":      {"grass": 2, "fire": 0.5, "poison": 0.5, "fighting": 0.5, "flying": 0.5, "fairy": 0.5, "ghost": 0.5, "dark": 2, "steel": 0.5, "psychic": 2},
+    "fighting": {"normal": 2, "ground": 2, "ice": 2, "poison": 0.5, "bug": 0.5, "flying": 0.5, "fairy": 0.5, "ghost": 0.5, "dark": 2, "steel": 2, "psychic": 0.5},
+    "flying":   {"grass": 2, "ground": 0.5, "dragon": 0.5, "electric": 0.5, "bug": 2, "fighting": 2, "steel": 0.5},
+    "fairy":    {"fire": 0.5, "dragon": 2, "poison": 0.5, "fighting": 2, "dark": 2, "steel": 0.5},
+    "ghost":    {"normal": 0.5, "light": 2, "ghost": 2, "dark": 0.5, "psychic": 2},
+    "dark":     {"light": 0.5, "poison": 2, "fighting": 0.5, "fairy": 2, "ghost": 2, "dark": 0.5},
+    "steel":    {"fire": 0.5, "water": 0.5, "ground": 2, "ice": 2, "electric": 0.5, "fairy": 2, "steel": 0.5},
+    "psychic":  {"light": 0.5, "poison": 2, "fighting": 2, "steel": 0.5, "psychic": 0.5},
 }
 
 # 属性映射（中文 -> Type enum）
@@ -78,8 +78,7 @@ TYPE_NAME_MAP = {
     "武系": Type.FIGHTING, "毒系": Type.POISON, "地系": Type.GROUND,
     "翼系": Type.FLYING, "幻系": Type.PSYCHIC, "虫系": Type.BUG,
     "机械系": Type.STEEL, "幽系": Type.GHOST, "龙系": Type.DRAGON,
-    "恶系": Type.DARK, "萌系": Type.FAIRY, "光系": Type.PSYCHIC,
-    "岩系": Type.ROCK,
+    "恶系": Type.DARK, "萌系": Type.FAIRY, "光系": Type.LIGHT,
 }
 
 CATEGORY_NAME_MAP = {
@@ -230,13 +229,22 @@ class Pokemon:
     energy: int = 10  # 登场时满能量，上限10
     status: StatusType = StatusType.NORMAL
 
-    # 百分比属性修正器 (1.0 = +100%, -0.5 = -50%)
-    # 上下界: [-0.9, 4.0]
-    atk_mod: float = 0.0
-    def_mod: float = 0.0
-    spatk_mod: float = 0.0
-    spdef_mod: float = 0.0
-    speed_mod: float = 0.0
+    # 属性修正：拆分为4个方向（up=提升量, down=降低量，均为正值）
+    # 能力等级 = (1 + 我方up + 敌方down) / (1 + 我方down + 敌方up)
+    atk_up: float = 0.0      # 我方物攻提升
+    atk_down: float = 0.0    # 我方物攻降低（来自敌方减益）
+    def_up: float = 0.0      # 我方物防提升
+    def_down: float = 0.0    # 我方物防降低
+    spatk_up: float = 0.0
+    spatk_down: float = 0.0
+    spdef_up: float = 0.0
+    spdef_down: float = 0.0
+    speed_up: float = 0.0
+    speed_down: float = 0.0
+
+    # 独立威力提升乘法层（技能特效/特性触发，站场持续，下场重置为1.0）
+    power_multiplier: float = 1.0
+
     life_drain_mod: float = 0.0
     skill_power_bonus: int = 0
     skill_power_pct_mod: float = 0.0
@@ -286,48 +294,54 @@ class Pokemon:
         self.energy = min(10, self.energy + amount)
 
     @staticmethod
-    def _clamp_mod(val: float) -> float:
-        """将属性修正限制在 [-0.9, 4.0] 范围"""
-        return max(-0.9, min(4.0, val))
+    def _clamp_up(val: float) -> float:
+        """正向修正上界 [0.0, 4.0]"""
+        return max(0.0, min(4.0, val))
+
+    @staticmethod
+    def _clamp_down(val: float) -> float:
+        """降低量上界 [0.0, 0.9]，防止防御/攻击降低超过90%"""
+        return max(0.0, min(0.9, val))
 
     def effective_atk(self) -> float:
-        return self.attack * (1.0 + self._clamp_mod(self.atk_mod))
+        return self.attack * (1.0 + self._clamp_up(self.atk_up)) / max(0.1, 1.0 + self._clamp_down(self.atk_down))
 
     def effective_def(self) -> float:
-        return self.defense * (1.0 + self._clamp_mod(self.def_mod))
+        return self.defense * (1.0 + self._clamp_up(self.def_up)) / max(0.1, 1.0 + self._clamp_down(self.def_down))
 
     def effective_spatk(self) -> float:
-        return self.sp_attack * (1.0 + self._clamp_mod(self.spatk_mod))
+        return self.sp_attack * (1.0 + self._clamp_up(self.spatk_up)) / max(0.1, 1.0 + self._clamp_down(self.spatk_down))
 
     def effective_spdef(self) -> float:
-        return self.sp_defense * (1.0 + self._clamp_mod(self.spdef_mod))
+        return self.sp_defense * (1.0 + self._clamp_up(self.spdef_up)) / max(0.1, 1.0 + self._clamp_down(self.spdef_down))
 
     def effective_speed(self) -> float:
-        return self.speed * (1.0 + self._clamp_mod(self.speed_mod))
+        return self.speed * (1.0 + self._clamp_up(self.speed_up)) / max(0.1, 1.0 + self._clamp_down(self.speed_down))
 
     def apply_self_buff(self, skill: Skill) -> None:
-        """应用技能的自身增益"""
-        self.atk_mod += skill.self_atk + skill.self_all_atk
-        self.def_mod += skill.self_def + skill.self_all_def
-        self.spatk_mod += skill.self_spatk + skill.self_all_atk
-        self.spdef_mod += skill.self_spdef + skill.self_all_def
-        self.speed_mod += skill.self_speed
+        """应用技能的自身增益（写入 *_up 字段）"""
+        self.atk_up += skill.self_atk + skill.self_all_atk
+        self.def_up += skill.self_def + skill.self_all_def
+        self.spatk_up += skill.self_spatk + skill.self_all_atk
+        self.spdef_up += skill.self_spdef + skill.self_all_def
+        self.speed_up += skill.self_speed
 
     def apply_enemy_debuff(self, skill: Skill) -> None:
-        """应用技能的敌方减益"""
-        self.atk_mod -= skill.enemy_atk + skill.enemy_all_atk
-        self.def_mod -= skill.enemy_def + skill.enemy_all_def
-        self.spatk_mod -= skill.enemy_spatk + skill.enemy_all_atk
-        self.spdef_mod -= skill.enemy_spdef + skill.enemy_all_def
-        self.speed_mod -= skill.enemy_speed
+        """应用技能的敌方减益（写入 *_down 字段，参数值为正）"""
+        self.atk_down += skill.enemy_atk + skill.enemy_all_atk
+        self.def_down += skill.enemy_def + skill.enemy_all_def
+        self.spatk_down += skill.enemy_spatk + skill.enemy_all_atk
+        self.spdef_down += skill.enemy_spdef + skill.enemy_all_def
+        self.speed_down += skill.enemy_speed
 
     def on_switch_out(self) -> None:
-        """下场时清除：个体Buff + 中毒 + 燃烧 + 寄生 + 蓄力。冻伤和星陨保留。"""
-        self.atk_mod = 0.0
-        self.def_mod = 0.0
-        self.spatk_mod = 0.0
-        self.spdef_mod = 0.0
-        self.speed_mod = 0.0
+        """下场时清除：个体Buff（含方向mod）+ 威力乘数 + 中毒 + 燃烧 + 寄生 + 蓄力。冻伤和星陨保留。"""
+        self.atk_up = self.atk_down = 0.0
+        self.def_up = self.def_down = 0.0
+        self.spatk_up = self.spatk_down = 0.0
+        self.spdef_up = self.spdef_down = 0.0
+        self.speed_up = self.speed_down = 0.0
+        self.power_multiplier = 1.0
         self.life_drain_mod = 0.0
         self.skill_power_bonus = 0
         self.skill_cost_mod = 0
@@ -343,8 +357,12 @@ class Pokemon:
         self.charging_skill_idx = -1
 
     def reset_mods(self) -> None:
-        """重置所有修正"""
-        self.atk_mod = self.def_mod = self.spatk_mod = self.spdef_mod = self.speed_mod = 0.0
+        """重置所有方向修正（用于变身等特殊场景）"""
+        self.atk_up = self.atk_down = 0.0
+        self.def_up = self.def_down = 0.0
+        self.spatk_up = self.spatk_down = 0.0
+        self.spdef_up = self.spdef_down = 0.0
+        self.speed_up = self.speed_down = 0.0
 
     def copy_state(self):
         """复制状态（用于MCTS模拟）"""
@@ -357,11 +375,17 @@ class Pokemon:
             current_hp=self.current_hp, energy=self.energy,
             status=self.status,
         )
-        p.atk_mod = self.atk_mod
-        p.def_mod = self.def_mod
-        p.spatk_mod = self.spatk_mod
-        p.spdef_mod = self.spdef_mod
-        p.speed_mod = self.speed_mod
+        p.atk_up = self.atk_up
+        p.atk_down = self.atk_down
+        p.def_up = self.def_up
+        p.def_down = self.def_down
+        p.spatk_up = self.spatk_up
+        p.spatk_down = self.spatk_down
+        p.spdef_up = self.spdef_up
+        p.spdef_down = self.spdef_down
+        p.speed_up = self.speed_up
+        p.speed_down = self.speed_down
+        p.power_multiplier = self.power_multiplier
         p.life_drain_mod = self.life_drain_mod
         p.skill_power_bonus = self.skill_power_bonus
         p.skill_power_pct_mod = self.skill_power_pct_mod

@@ -83,51 +83,53 @@ def _find_skill_index(pokemon: "Pokemon", skill: "Skill") -> int:
 
 
 def _apply_buff(pokemon: "Pokemon", params: Dict) -> None:
-    """应用正向属性修改"""
+    """应用正向属性修改（写入 *_up 字段）"""
     if "atk" in params:
-        pokemon.atk_mod += params["atk"]
+        pokemon.atk_up += params["atk"]
     if "def" in params:
-        pokemon.def_mod += params["def"]
+        pokemon.def_up += params["def"]
     if "spatk" in params:
-        pokemon.spatk_mod += params["spatk"]
+        pokemon.spatk_up += params["spatk"]
     if "spdef" in params:
-        pokemon.spdef_mod += params["spdef"]
+        pokemon.spdef_up += params["spdef"]
     if "speed" in params:
-        pokemon.speed_mod += params["speed"]
+        pokemon.speed_up += params["speed"]
     if "all_atk" in params:
-        pokemon.atk_mod += params["all_atk"]
-        pokemon.spatk_mod += params["all_atk"]
+        pokemon.atk_up += params["all_atk"]
+        pokemon.spatk_up += params["all_atk"]
     if "all_def" in params:
-        pokemon.def_mod += params["all_def"]
-        pokemon.spdef_mod += params["all_def"]
+        pokemon.def_up += params["all_def"]
+        pokemon.spdef_up += params["all_def"]
 
 
 def _apply_debuff(pokemon: "Pokemon", params: Dict) -> None:
-    """应用负向属性修改（params 中的值为正，自动取反）"""
+    """应用负向属性修改（写入 *_down 字段，params 中的值为正数）"""
     if "atk" in params:
-        pokemon.atk_mod -= params["atk"]
+        pokemon.atk_down += params["atk"]
     if "def" in params:
-        pokemon.def_mod -= params["def"]
+        pokemon.def_down += params["def"]
     if "spatk" in params:
-        pokemon.spatk_mod -= params["spatk"]
+        pokemon.spatk_down += params["spatk"]
     if "spdef" in params:
-        pokemon.spdef_mod -= params["spdef"]
+        pokemon.spdef_down += params["spdef"]
     if "speed" in params:
-        pokemon.speed_mod -= params["speed"]
+        pokemon.speed_down += params["speed"]
     if "all_atk" in params:
-        pokemon.atk_mod -= params["all_atk"]
-        pokemon.spatk_mod -= params["all_atk"]
+        pokemon.atk_down += params["all_atk"]
+        pokemon.spatk_down += params["all_atk"]
     if "all_def" in params:
-        pokemon.def_mod -= params["all_def"]
-        pokemon.spdef_mod -= params["all_def"]
+        pokemon.def_down += params["all_def"]
+        pokemon.spdef_down += params["all_def"]
 
 
 def _clear_buffs(pokemon: "Pokemon") -> None:
-    pokemon.atk_mod = min(0.0, pokemon.atk_mod)
-    pokemon.def_mod = min(0.0, pokemon.def_mod)
-    pokemon.spatk_mod = min(0.0, pokemon.spatk_mod)
-    pokemon.spdef_mod = min(0.0, pokemon.spdef_mod)
-    pokemon.speed_mod = min(0.0, pokemon.speed_mod)
+    """清除所有正向增益（*_up 字段归零，power_multiplier 重置）"""
+    pokemon.atk_up = 0.0
+    pokemon.def_up = 0.0
+    pokemon.spatk_up = 0.0
+    pokemon.spdef_up = 0.0
+    pokemon.speed_up = 0.0
+    pokemon.power_multiplier = 1.0
     pokemon.life_drain_mod = 0.0
     pokemon.skill_power_bonus = min(0, pokemon.skill_power_bonus)
     pokemon.skill_power_pct_mod = min(0.0, pokemon.skill_power_pct_mod)
@@ -139,11 +141,12 @@ def _clear_buffs(pokemon: "Pokemon") -> None:
 
 
 def _clear_debuffs(pokemon: "Pokemon") -> None:
-    pokemon.atk_mod = max(0.0, pokemon.atk_mod)
-    pokemon.def_mod = max(0.0, pokemon.def_mod)
-    pokemon.spatk_mod = max(0.0, pokemon.spatk_mod)
-    pokemon.spdef_mod = max(0.0, pokemon.spdef_mod)
-    pokemon.speed_mod = max(0.0, pokemon.speed_mod)
+    """清除所有负向减益（*_down 字段归零）"""
+    pokemon.atk_down = 0.0
+    pokemon.def_down = 0.0
+    pokemon.spatk_down = 0.0
+    pokemon.spdef_down = 0.0
+    pokemon.speed_down = 0.0
     pokemon.poison_stacks = 0
     pokemon.burn_stacks = 0
     pokemon.freeze_stacks = 0
@@ -352,11 +355,11 @@ def _h_agility(tag: EffectTag, ctx: Ctx) -> None:
 
 def _h_convert_buff_to_poison(tag: EffectTag, ctx: Ctx) -> None:
     total_buff = 0
-    for attr in ["atk_mod", "def_mod", "spatk_mod", "spdef_mod", "speed_mod"]:
+    for attr in ["atk_up", "def_up", "spatk_up", "spdef_up", "speed_up"]:
         v = getattr(ctx.target, attr, 0)
         if v > 0:
             total_buff += int(v * 10)
-            setattr(ctx.target, attr, 0)
+            setattr(ctx.target, attr, 0.0)
     if total_buff > 0:
         ctx.target.poison_stacks += total_buff
 
@@ -523,21 +526,21 @@ def _h_weather(tag: EffectTag, ctx: Ctx) -> None:
 
 
 # ── 注册表 ──
-_WEATHER_DAMAGE_TYPES = {"sandstorm", "hail", "snow"}   # 这些天气在回合结束时触发额外效果
-_WEATHER_IMMUNE_TYPES = {"rock", "ground", "steel"}
+_WEATHER_DAMAGE_TYPES = {"sandstorm", "snow"}   # 洛克王国真实天气（沙暴/雪天）
+_WEATHER_IMMUNE_TYPES = {"ground", "steel"}      # 游戏无岩系，免疫天气伤害的属性
 
 
 def _apply_weather_damage(state) -> None:
     """回合结束时应用天气效果。
-    - 沙暴/冰雹：对非岩/地/钢系造成 1/16 HP 伤害
+    - 沙暴：对非地/钢系造成 1/16 HP 伤害
     - 雪天：双方获得 2 层冻结
     """
     from src.models import Type
     w = state.weather
     if not w:
         return
-    immune = {Type.ROCK, Type.GROUND, Type.STEEL}
-    if w in _WEATHER_DAMAGE_TYPES and w != "snow":
+    immune = {Type.GROUND, Type.STEEL}
+    if w == "sandstorm":
         dmg_pct = 1 / 16
         for p in state.team_a:
             if not p.is_fainted and p.pokemon_type not in immune:
@@ -679,17 +682,27 @@ def _h_transfer_mods(tag: EffectTag, ctx: Ctx) -> None:
     """TRANSFER_MODS: 洁癖离场时保存属性修正，存入 result 供 battle.py 传递"""
     pokemon = ctx.user
     ctx.result["transfer_mods"] = {
-        "atk_mod":   pokemon.atk_mod,
-        "def_mod":   pokemon.def_mod,
-        "spatk_mod": pokemon.spatk_mod,
-        "spdef_mod": pokemon.spdef_mod,
-        "speed_mod": pokemon.speed_mod,
+        "atk_up":     pokemon.atk_up,
+        "atk_down":   pokemon.atk_down,
+        "def_up":     pokemon.def_up,
+        "def_down":   pokemon.def_down,
+        "spatk_up":   pokemon.spatk_up,
+        "spatk_down": pokemon.spatk_down,
+        "spdef_up":   pokemon.spdef_up,
+        "spdef_down": pokemon.spdef_down,
+        "speed_up":   pokemon.speed_up,
+        "speed_down": pokemon.speed_down,
     }
 
 
 def _h_burn_no_decay(tag: EffectTag, ctx: Ctx) -> None:
     """BURN_NO_DECAY: 标记煤渣草在场，本回合灼烧不衰减"""
     ctx.result["burn_no_decay"] = True
+
+
+def _h_power_multiplier_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """POWER_MULTIPLIER_BUFF: 独立威力提升乘法层，站场期间持续，下场重置"""
+    ctx.user.power_multiplier *= tag.params.get("multiplier", 1.0)
 
 
 # ── 注册表 ──
@@ -744,6 +757,7 @@ _HANDLERS: Dict[E, Callable] = {
     E.ABILITY_INCREMENT_COUNTER:    _h_ability_increment_counter,
     E.TRANSFER_MODS:                _h_transfer_mods,
     E.BURN_NO_DECAY:                _h_burn_no_decay,
+    E.POWER_MULTIPLIER_BUFF:        _h_power_multiplier_buff,
 }
 
 # 特性中部分 handler 与技能略有不同，按 tag type 覆盖
@@ -756,6 +770,7 @@ _ABILITY_HANDLER_OVERRIDES: Dict[E, Callable] = {
     E.ABILITY_INCREMENT_COUNTER: _h_ability_increment_counter,
     E.TRANSFER_MODS:             _h_transfer_mods,
     E.BURN_NO_DECAY:             _h_burn_no_decay,
+    E.POWER_MULTIPLIER_BUFF:     _h_power_multiplier_buff,
 }
 
 

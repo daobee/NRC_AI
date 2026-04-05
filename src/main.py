@@ -430,21 +430,21 @@ def _hp_bar(current, maximum):
 
 def _fmt_mods(p):
     parts = []
-    if p.atk_mod > 0: parts.append(f"攻+{p.atk_mod}")
-    if p.spatk_mod > 0: parts.append(f"魔攻+{p.spatk_mod}")
-    if p.def_mod > 0: parts.append(f"防+{p.def_mod}")
-    if p.spdef_mod > 0: parts.append(f"魔防+{p.spdef_mod}")
-    if p.speed_mod > 0: parts.append(f"速+{p.speed_mod}")
+    if p.atk_up > 0:    parts.append(f"攻+{p.atk_up:.0%}")
+    if p.spatk_up > 0:  parts.append(f"魔攻+{p.spatk_up:.0%}")
+    if p.def_up > 0:    parts.append(f"防+{p.def_up:.0%}")
+    if p.spdef_up > 0:  parts.append(f"魔防+{p.spdef_up:.0%}")
+    if p.speed_up > 0:  parts.append(f"速+{p.speed_up:.0%}")
     return ", ".join(parts) if parts else "无"
 
 
 def _fmt_debuffs(p):
     parts = []
-    if p.atk_mod < 0: parts.append(f"攻{p.atk_mod}")
-    if p.spatk_mod < 0: parts.append(f"魔攻{p.spatk_mod}")
-    if p.def_mod < 0: parts.append(f"防{p.def_mod}")
-    if p.spdef_mod < 0: parts.append(f"魔防{p.spdef_mod}")
-    if p.speed_mod < 0: parts.append(f"速{p.speed_mod}")
+    if p.atk_down > 0:   parts.append(f"攻-{p.atk_down:.0%}")
+    if p.spatk_down > 0: parts.append(f"魔攻-{p.spatk_down:.0%}")
+    if p.def_down > 0:   parts.append(f"防-{p.def_down:.0%}")
+    if p.spdef_down > 0: parts.append(f"魔防-{p.spdef_down:.0%}")
+    if p.speed_down > 0: parts.append(f"速-{p.speed_down:.0%}")
     return ", ".join(parts) if parts else "无"
 
 

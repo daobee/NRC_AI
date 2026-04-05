@@ -138,8 +138,8 @@ def test_greed_transfers_buffs_debuffs_and_statuses_on_enemy_switch():
         name="old",
         skills=[switch_skill],
     )
-    old_enemy.atk_mod = 0.6
-    old_enemy.speed_mod = -0.2
+    old_enemy.atk_up = 0.6       # 攻击提升 60%（buff 方向）
+    old_enemy.speed_down = 0.2   # 速度降低 20%（debuff 方向）
     old_enemy.poison_stacks = 3
     old_enemy.freeze_stacks = 2
     new_enemy = make_pokemon(name="new", skills=[switch_skill], speed=50)
@@ -155,8 +155,8 @@ def test_greed_transfers_buffs_debuffs_and_statuses_on_enemy_switch():
 
     current = state.team_a[state.current_a]
     assert current.name == "new"
-    assert current.atk_mod == 0.6
-    assert current.speed_mod == -0.2
+    assert current.atk_up == 0.6
+    assert current.speed_down == 0.2
     assert current.poison_stacks == 3
     assert current.freeze_stacks == 2
 

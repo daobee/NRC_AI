@@ -28,8 +28,8 @@ _TYPE_MAP = {
     "普通": Type.NORMAL, "火": Type.FIRE, "水": Type.WATER, "草": Type.GRASS,
     "电": Type.ELECTRIC, "冰": Type.ICE, "武": Type.FIGHTING, "毒": Type.POISON,
     "地": Type.GROUND, "翼": Type.FLYING, "幻": Type.PSYCHIC, "虫": Type.BUG,
-    "岩": Type.ROCK, "幽": Type.GHOST, "龙": Type.DRAGON, "恶": Type.DARK,
-    "机械": Type.STEEL, "萌": Type.FAIRY, "光": Type.PSYCHIC,
+    "幽": Type.GHOST, "龙": Type.DRAGON, "恶": Type.DARK,
+    "机械": Type.STEEL, "萌": Type.FAIRY, "光": Type.LIGHT,
     "未知": Type.NORMAL, "—": Type.NORMAL,
 }
 _TYPE_MAP.update(TYPE_NAME_MAP)

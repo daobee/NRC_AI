@@ -259,8 +259,8 @@ def _snapshot(state: BattleState) -> dict:
             snap[f"{team_key}_{i}_leech"]    = p.leech_stacks
             snap[f"{team_key}_{i}_frost"]    = p.frostbite_damage
             snap[f"{team_key}_{i}_meteor"]   = p.meteor_stacks
-            snap[f"{team_key}_{i}_atk_mod"]  = round(p.atk_mod * 100)
-            snap[f"{team_key}_{i}_def_mod"]  = round(p.def_mod * 100)
+            snap[f"{team_key}_{i}_atk_mod"]  = round((p.atk_up - p.atk_down) * 100)
+            snap[f"{team_key}_{i}_def_mod"]  = round((p.def_up - p.def_down) * 100)
     return snap
 
 
@@ -407,11 +407,11 @@ def serialize_pokemon(p, is_current=False):
         "meteor_stacks":   p.meteor_stacks,
         "meteor_countdown":p.meteor_countdown,
         "charging":        p.charging_skill_idx >= 0,
-        "atk_mod":         round(p.atk_mod * 100),
-        "def_mod":         round(p.def_mod * 100),
-        "spatk_mod":       round(p.spatk_mod * 100),
-        "spdef_mod":       round(p.spdef_mod * 100),
-        "speed_mod":       round(p.speed_mod * 100),
+        "atk_mod":         round((p.atk_up - p.atk_down) * 100),
+        "def_mod":         round((p.def_up - p.def_down) * 100),
+        "spatk_mod":       round((p.spatk_up - p.spatk_down) * 100),
+        "spdef_mod":       round((p.spdef_up - p.spdef_down) * 100),
+        "speed_mod":       round((p.speed_up - p.speed_down) * 100),
         "skills":          [serialize_skill(s, p.energy, p.cooldowns.get(i, 0))
                             for i, s in enumerate(p.skills)] if is_current else [],
     }

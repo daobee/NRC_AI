@@ -121,17 +121,17 @@ def test_cleanse_can_remove_buffs_and_debuffs():
     user = make_pokemon("user", skills=[cleanse_skill])
     enemy = make_pokemon("enemy", skills=[make_skill("wait")])
     user.poison_stacks = 3
-    user.speed_mod = -0.4
-    enemy.atk_mod = 0.8
-    enemy.def_mod = 0.6
+    user.speed_down = 0.4        # 速度降低 40%（debuff 方向）
+    enemy.atk_up = 0.8           # 攻击提升 80%（buff 方向）
+    enemy.def_up = 0.6           # 防御提升 60%（buff 方向）
     state = BattleState(team_a=[user], team_b=[enemy])
 
     EffectExecutor.execute_skill(state, user, enemy, cleanse_skill, cleanse_skill.effects)
 
     assert user.poison_stacks == 0
-    assert user.speed_mod == 0.0
-    assert enemy.atk_mod == 0.0
-    assert enemy.def_mod == 0.0
+    assert user.speed_down == 0.0
+    assert enemy.atk_up == 0.0
+    assert enemy.def_up == 0.0
 
 
 def test_skill_mod_priority_affects_turn_order():

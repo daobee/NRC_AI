@@ -69,7 +69,7 @@ def test_speed_buff_applies_when_priority_equal():
         speed=100,
         skills=[make_skill("normal")],
     )
-    a.speed_mod = 0.5
+    a.speed_up = 0.5
     b = make_pokemon(
         "plain",
         speed=120,

@@ -155,7 +155,7 @@ def test_priority_beats_speed():
 def test_speed_buffs_break_priority_ties():
     slower = make_pokemon("slower", speed=100, skills=[make_skill("a", energy=0)])
     faster_after_buff = make_pokemon("faster", speed=90, skills=[make_skill("b", energy=0)])
-    faster_after_buff.speed_mod = 0.5
+    faster_after_buff.speed_up = 0.5
     state = BattleState(team_a=[slower], team_b=[faster_after_buff], current_a=0, current_b=0)
 
     assert _is_first_action(state, "b", (0,), "a", (0,)) is True

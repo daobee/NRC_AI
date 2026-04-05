@@ -93,9 +93,11 @@ class ExperienceMemory:
         enemy_mp = state.mp_b if team == "a" else state.mp_a
         mp_diff = my_mp - enemy_mp
         
-        # buff 简化为正/零/负
-        atk_sign = "+" if p.atk_mod > 0 else ("-" if p.atk_mod < 0 else "0")
-        def_sign = "+" if p.def_mod > 0 else ("-" if p.def_mod < 0 else "0")
+        # buff 简化为正/零/负（用净方向判断）
+        atk_net = p.atk_up - p.atk_down
+        def_net = p.def_up - p.def_down
+        atk_sign = "+" if atk_net > 0 else ("-" if atk_net < 0 else "0")
+        def_sign = "+" if def_net > 0 else ("-" if def_net < 0 else "0")
         
         # 状态标记
         status_flags = ""

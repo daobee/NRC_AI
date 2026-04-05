@@ -92,6 +92,7 @@ class E(Enum):
     ABILITY_INCREMENT_COUNTER = auto()  # 计数器+1（海豹船长）
     TRANSFER_MODS = auto()           # 离场时传递属性修正（翠顶夫人洁癖）
     BURN_NO_DECAY = auto()           # 标记: 灼烧本回合不衰减（燃薪虫煤渣草）
+    POWER_MULTIPLIER_BUFF = auto()   # 独立威力提升乘法层 params: {"multiplier": 1.5}
 
     # ── 复合 / 特殊 ──
     REPLAY_AGILITY = auto()          # 重放迅捷技能 params: {} (疾风连袭)

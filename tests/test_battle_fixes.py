@@ -312,26 +312,13 @@ def test_replay_agility_executes_agility_skill():
 # ─────────────────────────────────────────
 
 def test_weather_sunny_fire_boost():
-    """晴天：火系技能威力×1.5"""
-    attacker = make_pokemon("火球", hp=200, attack=100, defense=80,
-                             spatk=150, spdef=80, speed=100,
-                             ptype=Type.FIRE)
-    defender = make_pokemon("水物", hp=200, attack=80, defense=80,
-                             spatk=80, spdef=80, speed=90,
-                             ptype=Type.WATER)
-
-    fire_skill = make_skill("火球", power=100, energy=4, skill_type=Type.FIRE)
-
-    dmg_no_weather = DamageCalculator.calculate(attacker, defender, fire_skill)
-    dmg_sunny = DamageCalculator.calculate(attacker, defender, fire_skill, weather="sunny")
-
-    assert abs(dmg_sunny / dmg_no_weather - 1.5) < 0.01, \
-        f"晴天火系期望×1.5，实际{dmg_sunny/dmg_no_weather:.2f}"
-    print(f"PASS: 晴天：火系x1.5（{dmg_no_weather}->{dmg_sunny}）")
+    """晴天不存在于洛克王国（已跳过）"""
+    # 游戏只有沙暴/雪天/雨天，晴天不存在，跳过此测试
+    print("SKIP: 晴天不是游戏中的天气，跳过")
 
 
 def test_weather_rain_water_boost():
-    """雨天：水系技能威力×1.5，火系×0.5"""
+    """雨天：水系技能威力×1.5，火系无影响（游戏规则）"""
     attacker = make_pokemon("水炮", hp=200, attack=80, defense=80,
                              spatk=150, spdef=80, speed=100,
                              ptype=Type.WATER)
@@ -349,18 +336,25 @@ def test_weather_rain_water_boost():
         f"雨天水系期望×1.5，实际{dmg_rain/dmg_no:.2f}"
     print(f"PASS: 雨天：水系x1.5（{dmg_no}->{dmg_rain}）")
 
+    # 雨天火系无 debuff（游戏规则）
+    dmg_fire_no = DamageCalculator.calculate(attacker, defender, fire_skill)
+    dmg_fire_rain = DamageCalculator.calculate(attacker, defender, fire_skill, weather="rain")
+    assert dmg_fire_no == dmg_fire_rain, \
+        f"雨天火系应无变化，实际比值{dmg_fire_rain/dmg_fire_no:.2f}"
+    print(f"PASS: 雨天：火系无debuff（{dmg_fire_no}=={dmg_fire_rain}）")
+
 
 def test_weather_turn_expiration():
     """天气设置后持续指定回合，到期自动清除"""
     state = BattleState(team_a=[make_pokemon()], team_b=[make_pokemon()])
 
-    # 模拟技能设置天气5回合
-    state.weather = "sunny"
+    # 模拟技能设置天气5回合（使用实际存在的天气类型）
+    state.weather = "rain"
     state.weather_turns = 5
 
     for turn in range(1, 6):
         # 每回合递减
-        assert state.weather == "sunny", f"第{turn}回合天气应为sunny"
+        assert state.weather == "rain", f"第{turn}回合天气应为rain"
         assert state.weather_turns == 6 - turn
         state.weather_turns -= 1
         if state.weather_turns <= 0:
@@ -412,7 +406,7 @@ def test_weather_effect_sets_state_weather():
 
     assert state.weather is None
 
-    weather_tag = EffectTag(E.WEATHER, {"type": "sunny", "turns": 3})
+    weather_tag = EffectTag(E.WEATHER, {"type": "rain", "turns": 3})
     ctx = Ctx(
         state=state,
         user=state.team_a[0],
@@ -424,9 +418,9 @@ def test_weather_effect_sets_state_weather():
 
     _h_weather(weather_tag, ctx)
 
-    assert state.weather == "sunny"
+    assert state.weather == "rain"
     assert state.weather_turns == 3
-    print("PASS: WEATHER handler 正确设置 weather='sunny', turns=3")
+    print("PASS: WEATHER handler 正确设置 weather='rain', turns=3")
 
 
 # ─────────────────────────────────────────
