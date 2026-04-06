@@ -914,16 +914,37 @@ def _execute_with_counter(state: BattleState, team: str, action: Action,
                 actual_cost = max(0, actual_cost + dynamic_delta)
 
     if current.energy < actual_cost:
-        current.gain_energy(5)
-        # 记录聚能事件，供 server.py 日志展示
-        if not hasattr(state, "_energy_recharge_log"):
-            state._energy_recharge_log = []
-        state._energy_recharge_log.append({
-            "team": team, "pokemon": current.name,
-            "skill": skill.name, "needed": actual_cost, "had": current.energy - 5,
-        })
-        return
+        # 石头大餐: 能量不足时每缺1点消耗5%HP代替
+        if current.ability_state.get("hp_for_energy"):
+            missing = actual_cost - current.energy
+            hp_cost = int(current.hp * 0.05 * missing)
+            if current.current_hp > hp_cost:
+                current.current_hp -= hp_cost
+                current.energy = 0  # 消耗所有当前能量 + HP补差
+            else:
+                # HP不够，回到正常聚能逻辑
+                current.gain_energy(5)
+                if not hasattr(state, "_energy_recharge_log"):
+                    state._energy_recharge_log = []
+                state._energy_recharge_log.append({
+                    "team": team, "pokemon": current.name,
+                    "skill": skill.name, "needed": actual_cost, "had": current.energy - 5,
+                })
+                return
+        else:
+            current.gain_energy(5)
+            # 记录聚能事件，供 server.py 日志展示
+            if not hasattr(state, "_energy_recharge_log"):
+                state._energy_recharge_log = []
+            state._energy_recharge_log.append({
+                "team": team, "pokemon": current.name,
+                "skill": skill.name, "needed": actual_cost, "had": current.energy - 5,
+            })
+            return
     current.energy -= actual_cost
+
+    # 记录实际能耗到技能上，供逐魂鸟等效果检查
+    skill._last_actual_cost = actual_cost
 
     # 所有技能走新引擎（效果由 EffectTag 驱动）
     _execute_new_engine(state, team, enemy_team, current, enemy, skill,
@@ -1295,6 +1316,14 @@ class TeamBuilder:
             for tag in ae.effects:
                 if tag.type == E.COST_INVERT:
                     p.ability_state["cost_invert"] = True
+                elif tag.type == E.IMMUNE_ZERO_ENERGY_ATTACKER:
+                    p.ability_state["immune_zero_energy_attacker"] = True
+                elif tag.type == E.IMMUNE_LOW_COST_ATTACK:
+                    p.ability_state["immune_low_cost_attack"] = tag.params.get("cost_threshold", 1)
+                elif tag.type == E.FIXED_HIT_COUNT_ALL:
+                    p.ability_state["fixed_hit_count_all"] = tag.params.get("count", 2)
+                elif tag.type == E.HIT_COUNT_PER_POISON:
+                    p.ability_state["hit_count_per_poison"] = True
         return p
 
     @staticmethod

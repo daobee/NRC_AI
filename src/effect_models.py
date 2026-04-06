@@ -131,8 +131,6 @@ class E(Enum):
     ENERGY_COST_ACCUMULATE = auto()  # 每次使用后能耗+N  params: {"delta":1}
     AGILITY_COST_SHARE = auto()      # 迅捷技能能耗之和的1/2加到本技能 params: {}
 
-
-# ============================================================
     # ── TIER 1 特性专用原语 ──
     COUNTER_SUCCESS_DOUBLE_DAMAGE = auto()      # 应对成功后伤害翻倍（圣火骑士）
     COUNTER_SUCCESS_BUFF_PERMANENT = auto()     # 应对成功后增益永久化 params: {"atk": 0.2, "spatk": 0}
@@ -187,6 +185,60 @@ class E(Enum):
     # Entry Effects (1)
     FREEZE_IMMUNITY_AND_BUFF = auto()            # 吉利丁片: +20% defense, freeze immune params: {"def_bonus": 0.2}
 
+    # ── 通用特性原语 ──
+    EXTRA_FREEZE_ON_FREEZE = auto()     # 加个雪球: 使敌方获得冻结时额外+N层  params: {"extra": 2}
+    FAINT_NO_MP_LOSS = auto()           # 诈死: 力竭时不扣MP  params: {}
+    ON_SKILL_ELEMENT_BUFF = auto()      # 使用某系技能后获得buff  params: {"element":"火","buff":{"atk":0.2,"spatk":0.2}}
+    ON_SKILL_ELEMENT_POISON = auto()    # 使用某系技能后敌方中毒  params: {"element":"草","stacks":2}
+    ON_SKILL_ELEMENT_COST_REDUCE = auto()  # 使用某系技能后全能耗-N  params: {"element":"水","reduce":1}
+    ON_SKILL_ELEMENT_HEAL = auto()      # 使用某系技能后回血  params: {"element":"草","heal_pct":0.1}
+    ON_SKILL_ELEMENT_ENEMY_ENERGY = auto()  # 使用某系技能后敌方失能量  params: {"element":"恶","amount":2}
+    CARRY_SKILL_POWER_BONUS = auto()    # 携带某条件技能威力+N%  params: {"condition":"cost_eq","value":1,"bonus_pct":0.5}
+    CARRY_SKILL_COST_REDUCE = auto()    # 携带某类技能能耗-N  params: {"category":"defense","reduce":2}
+    CARRY_ELEMENT_COUNT_BUFF = auto()   # 每携带N个某系技能获得效果  params: {"element":"水","per_skill":{"cost_reduce":1,"target_element":"地"}}
+    ON_KILL_BUFF = auto()               # 击败敌方后获得buff  params: {"buff":{"atk":0.5,"spatk":0.5}}
+    RECOIL_DAMAGE = auto()              # 每受到攻击反弹固定伤害  params: {"power":50,"category":"physical"}
+    ENTRY_BUFF = auto()                 # 入场时获得buff  params: {"buff":{"atk":1.0},"duration":1}
+    ON_ENTER_GRANT_DRAIN = auto()       # 入场时获得吸血  params: {"pct": 0.5}
+    ENEMY_ALL_COST_UP = auto()          # 在场时敌方全技能能耗+N  params: {"amount": 1}
+    ENTRY_FREEZE_EXTRA = auto()         # 入场时冻结+额外效果  params: {"freeze":2,"extra_cost_up":1}
+    LEAVE_HEAL_ALLY = auto()            # 离场后替换精灵回血  params: {"heal_pct":0.2}
+    LEAVE_BUFF_ALLY = auto()            # 离场后替换精灵获得buff  params: {"buff":{"atk":0.2,"spatk":0.2}}
+    LEAVE_ENERGY_REFILL = auto()        # 离场时回复能量  params: {"amount": 10}
+    ENERGY_REGEN_PER_TURN = auto()      # 回合结束回复能量  params: {"amount": 3}
+    STEAL_ALL_ENEMY_ENERGY = auto()     # 回合结束偷取敌方全队能量  params: {"amount": 1}
+    ENEMY_SWITCH_DEBUFF = auto()        # 敌方换人后对入场者施加效果  params: {"poison": 5} 或 {"energy_loss": 3}
+    ENEMY_SWITCH_SELF_COST_REDUCE = auto()  # 敌方换人时自己获得能耗减  params: {"reduce": 3}
+    ON_INTERRUPT_COOLDOWN = auto()      # 打断敌方时被打断技能进入冷却  params: {"turns": 2}
+    LOW_COST_SKILL_POWER_BONUS = auto() # 能耗≤N的技能威力+M%  params: {"cost_threshold":1,"bonus_pct":0.5}
+    ENERGY_COST_CONDITION_BUFF = auto() # 使用能耗为N的技能时获得buff  params: {"cost":3,"buff":{"atk":0.2,"def":0.2}}
+    ENEMY_TECH_TOTAL_POWER = auto()     # 敌方技能总能耗越多自己越强  params: {"bonus_pct_per_cost": 0.1}
+    HALF_METEOR_FULL_DAMAGE = auto()    # 星陨只消耗一半层数但满伤  params: {}
+
+    # ── 新增特性原语 (第六批) ──
+    SPECIFIC_SKILL_POWER_BONUS = auto()  # 共鸣: 携带的指定名称技能威力+N  params: {"skill_name": "虫鸣", "power_bonus": 20}
+    ENERGY_NO_CAP = auto()               # 多人宿舍: 能量可超过上限（无上限） params: {}
+    HP_FOR_ENERGY = auto()               # 石头大餐: 能量不足时每缺1点消耗5%HP代替 params: {}
+    SHUFFLE_SKILLS_REDUCE_LAST = auto()  # 盲拧: 回合开始打乱技能顺序,4号位能耗-4 params: {"cost_reduce": 4}
+    WEATHER_CONDITIONAL_BUFF = auto()    # 得寸进尺: 天气条件下获得buff params: {"weather": "rain", "buff": {"atk": 1.0, "spatk": 1.0}}
+    FAINTED_ALLIES_BUFF = auto()         # 悲悯/悼亡: 每有1只力竭精灵双攻+N% params: {"buff_per": {"atk": 0.3, "spatk": 0.3}, "scope": "allies"|"all"}
+    ON_SUPER_EFFECTIVE_BUFF = auto()     # 最好的伙伴: 造成克制伤害后buff+回能 params: {"buff": {"atk":0.2}, "energy": 2}
+    ENEMY_ELEMENT_DIVERSITY_POWER = auto()  # 血型吸引: 敌方每携带1种系别威力+N params: {"power_per_type": 10}
+    KILL_MP_PENALTY = auto()             # 付给恶魔的赎价: 击败敌方-1MP/被击败自己-1MP params: {}
+
+    # ── 新增特性原语 (第五批) ──
+    HIT_COUNT_PER_POISON = auto()       # 侵蚀: 敌方每有1层中毒连击+1  params: {}
+    FIRST_ACTION_HIT_BONUS = auto()     # 噼啪！: 入场首次行动使用次数+1  params: {}
+    FIXED_HIT_COUNT_ALL = auto()        # 无差别过滤: 所有精灵连击数固定为2  params: {"count": 2}
+    EXTRA_POISON_TICK = auto()          # 复方汤剂: 回合结束中毒额外触发1次  params: {}
+    CONDITIONAL_ENTRY_BUFF_TOTAL_COST = auto()  # 保守派: 总能耗<4时双防+80%  params: {"cost_threshold": 4, "buff": {"def": 0.8, "spdef": 0.8}}
+    CONDITIONAL_ENTRY_BUFF_MP = auto()  # 图书守卫者: MP=1时双攻+50%  params: {"mp_value": 1, "buff": {"atk": 0.5, "spatk": 0.5}}
+    IMMUNE_ZERO_ENERGY_ATTACKER = auto()  # 惊吓: 能量=0的精灵无法对自己造伤  params: {}
+    IMMUNE_LOW_COST_ATTACK = auto()     # 逐魂鸟: 能耗≤1的攻击技能无法对自己造伤  params: {"cost_threshold": 1}
+    ENTRY_SELF_DAMAGE = auto()          # 铃兰晚钟: 入场时失去一半当前HP  params: {}
+
+
+# ============================================================
 # 触发时机枚举 (用于特性)
 # ============================================================
 class Timing(Enum):

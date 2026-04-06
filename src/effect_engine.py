@@ -351,6 +351,21 @@ def _h_damage(tag: EffectTag, ctx: Ctx) -> None:
     from src.battle import DamageCalculator, get_mark_damage_modifiers
     skill = ctx.skill
 
+    # ── 惊吓: 能量=0的攻击者无法对目标造伤 ──
+    if ctx.target.ability_state.get("immune_zero_energy_attacker") and ctx.user.energy == 0:
+        ctx.result["damage"] = ctx.result.get("damage", 0)
+        return
+
+    # ── 逐魂鸟: 能耗≤N的攻击技能无法对目标造伤 ──
+    immune_cost_threshold = ctx.target.ability_state.get("immune_low_cost_attack")
+    if immune_cost_threshold is not None:
+        from src.models import SkillCategory
+        if skill.category in (SkillCategory.PHYSICAL, SkillCategory.MAGICAL):
+            actual_cost = getattr(skill, "_last_actual_cost", skill.energy_cost)
+            if actual_cost <= immune_cost_threshold:
+                ctx.result["damage"] = ctx.result.get("damage", 0)
+                return
+
     # ── 印记伤害修正 ──
     mark_mods = get_mark_damage_modifiers(ctx.state, ctx.team, ctx.is_first, skill)
 
@@ -379,6 +394,22 @@ def _h_damage(tag: EffectTag, ctx: Ctx) -> None:
                 * ctx.result.get("_hit_count_mult", 1.0)
             ),
         )
+
+        # ── 侵蚀: 敌方每有1层中毒，连击数+1 (仅攻击技能) ──
+        if ctx.user.ability_state.get("hit_count_per_poison"):
+            from src.models import SkillCategory as _SC
+            if skill.category in (_SC.PHYSICAL, _SC.MAGICAL) and ctx.target.poison_stacks > 0:
+                hit_count += ctx.target.poison_stacks
+
+        # ── 噼啪！: 入场首次行动使用次数+1 ──
+        if ctx.user.ability_state.get("first_action_bonus"):
+            hit_count += 1
+
+        # ── 无差别过滤: 任一方有此标记则连击数固定为2 ──
+        fixed_hit = ctx.user.ability_state.get("fixed_hit_count_all") or ctx.target.ability_state.get("fixed_hit_count_all")
+        if fixed_hit:
+            hit_count = fixed_hit
+
         # 龙噬印记的攻击倍率：临时加到 atk_up
         old_atk_up = ctx.user.atk_up
         old_spatk_up = ctx.user.spatk_up
@@ -1797,6 +1828,422 @@ def _h_freeze_immunity_and_buff(tag: EffectTag, ctx: Ctx) -> None:
     ctx.logs.append(f"{ctx.user.name} gained +{int(def_bonus*100)}% defense and freeze immunity (吉利丁片)")
 
 
+# ── 通用特性 handler (批量新增) ──
+
+def _h_extra_freeze_on_freeze(tag: EffectTag, ctx: Ctx) -> None:
+    """EXTRA_FREEZE_ON_FREEZE: 加个雪球 — 敌方获得冻结时额外+N层"""
+    ctx.user.ability_state["extra_freeze"] = tag.params.get("extra", 2)
+
+
+def _h_faint_no_mp_loss(tag: EffectTag, ctx: Ctx) -> None:
+    """FAINT_NO_MP_LOSS: 诈死 — 力竭时不扣MP"""
+    ctx.user.ability_state["faint_no_mp_loss"] = True
+
+
+def _h_on_skill_element_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SKILL_ELEMENT_BUFF: 使用某系技能后获得buff（助燃/爆燃）"""
+    buff = tag.params.get("buff", {})
+    if buff:
+        _apply_buff(ctx.user, buff)
+
+
+def _h_on_skill_element_poison(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SKILL_ELEMENT_POISON: 使用某系技能后敌方中毒（生物碱）"""
+    stacks = tag.params.get("stacks", 2)
+    ctx.target.poison_stacks += stacks
+
+
+def _h_on_skill_element_cost_reduce(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SKILL_ELEMENT_COST_REDUCE: 使用某系技能后全能耗-N（浸润/浪潮）"""
+    reduce = tag.params.get("reduce", 1)
+    for s in ctx.user.skills:
+        s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.user, -reduce))
+
+
+def _h_on_skill_element_heal(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SKILL_ELEMENT_HEAL: 使用某系技能后回血（氧循环）"""
+    heal_pct = tag.params.get("heal_pct", 0.1)
+    heal = int(ctx.user.hp * heal_pct)
+    ctx.user.current_hp = min(ctx.user.hp, ctx.user.current_hp + heal)
+
+
+def _h_on_skill_element_enemy_energy(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SKILL_ELEMENT_ENEMY_ENERGY: 使用某系技能后敌方失去能量（碰瓷）"""
+    amount = tag.params.get("amount", 2)
+    ctx.target.energy = max(0, ctx.target.energy - amount)
+
+
+def _h_carry_skill_power_bonus(tag: EffectTag, ctx: Ctx) -> None:
+    """CARRY_SKILL_POWER_BONUS: 携带某条件技能威力+N%（勇敢）
+    Store in ability_state for damage calc to pick up.
+    """
+    ctx.user.ability_state["carry_skill_power_bonus"] = {
+        "condition": tag.params.get("condition", "cost_gt"),
+        "value": tag.params.get("value", 3),
+        "bonus_pct": tag.params.get("bonus_pct", 0.4),
+    }
+
+
+def _h_carry_skill_cost_reduce(tag: EffectTag, ctx: Ctx) -> None:
+    """CARRY_SKILL_COST_REDUCE: 携带某类技能能耗-N"""
+    from src.models import SkillCategory as SC
+    category = tag.params.get("category", "")
+    reduce = tag.params.get("reduce", 2)
+    for s in ctx.user.skills:
+        match = False
+        if category == "defense" and s.category == SC.DEFENSE:
+            match = True
+        elif category == "attack" and s.category in (SC.PHYSICAL, SC.MAGICAL):
+            match = True
+        elif category == "status" and s.category == SC.STATUS:
+            match = True
+        elif not category:
+            match = True
+        if match:
+            s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.user, -reduce))
+
+
+def _h_carry_element_count_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """CARRY_ELEMENT_COUNT_BUFF: 每携带N个某系技能获得效果（消波块）"""
+    from src.skill_db import _TYPE_MAP
+    element = tag.params.get("element", "")
+    per_skill = tag.params.get("per_skill", {})
+    target_type = _TYPE_MAP.get(element)
+    count = sum(1 for s in ctx.user.skills if s.skill_type == target_type) if target_type else 0
+    if count > 0 and per_skill:
+        cost_reduce = per_skill.get("cost_reduce", 0) * count
+        target_element = per_skill.get("target_element", "")
+        target_skill_type = _TYPE_MAP.get(target_element)
+        if cost_reduce and target_skill_type:
+            for s in ctx.user.skills:
+                if s.skill_type == target_skill_type:
+                    s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.user, -cost_reduce))
+
+
+def _h_on_kill_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_KILL_BUFF: 击败敌方后获得buff（恶魔的晚宴）"""
+    if ctx.target.is_fainted:
+        buff = tag.params.get("buff", {})
+        if buff:
+            _apply_buff(ctx.user, buff)
+
+
+def _h_recoil_damage(tag: EffectTag, ctx: Ctx) -> None:
+    """RECOIL_DAMAGE: 受到攻击时反弹固定伤害（刺肤）"""
+    power = tag.params.get("power", 50)
+    dmg = max(1, int(power))
+    if not ctx.target.is_fainted:
+        ctx.target.current_hp -= dmg
+        if ctx.target.current_hp <= 0:
+            ctx.target.current_hp = 0
+            from src.models import StatusType
+            ctx.target.status = StatusType.FAINTED
+
+
+def _h_entry_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """ENTRY_BUFF: 入场时获得buff（专注力等）"""
+    buff = tag.params.get("buff", {})
+    duration = tag.params.get("duration", 0)
+    if buff:
+        _apply_buff(ctx.user, buff)
+    if duration:
+        ctx.user.ability_state["entry_buff_duration"] = duration
+        ctx.user.ability_state["entry_buff_keys"] = list(buff.keys())
+
+
+def _h_on_enter_grant_drain(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_ENTER_GRANT_DRAIN: 入场时获得吸血（渴求）"""
+    pct = tag.params.get("pct", 0.5)
+    ctx.user.life_drain_mod += pct
+
+
+def _h_enemy_all_cost_up(tag: EffectTag, ctx: Ctx) -> None:
+    """ENEMY_ALL_COST_UP: 在场时敌方全技能能耗+N（冰封）"""
+    amount = tag.params.get("amount", 1)
+    for s in ctx.target.skills:
+        s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.target, amount))
+
+
+def _h_entry_freeze_extra(tag: EffectTag, ctx: Ctx) -> None:
+    """ENTRY_FREEZE_EXTRA: 入场时冻结+额外能耗增加（抓到你了）"""
+    freeze = tag.params.get("freeze", 2)
+    extra_cost_up = tag.params.get("extra_cost_up", 1)
+    ctx.target.freeze_stacks += freeze
+    if extra_cost_up:
+        for s in ctx.target.skills:
+            s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.target, extra_cost_up))
+
+
+def _h_leave_heal_ally(tag: EffectTag, ctx: Ctx) -> None:
+    """LEAVE_HEAL_ALLY: 离场后替换精灵回血（茶多酚）"""
+    heal_pct = tag.params.get("heal_pct", 0.2)
+    ctx.result["leave_heal_ally"] = heal_pct
+
+
+def _h_leave_buff_ally(tag: EffectTag, ctx: Ctx) -> None:
+    """LEAVE_BUFF_ALLY: 离场后替换精灵获得buff（美拉德反应）"""
+    buff = tag.params.get("buff", {})
+    ctx.result["leave_buff_ally"] = buff
+
+
+def _h_leave_energy_refill(tag: EffectTag, ctx: Ctx) -> None:
+    """LEAVE_ENERGY_REFILL: 离场时回复能量（快充）"""
+    amount = tag.params.get("amount", 10)
+    ctx.user.gain_energy(amount)
+
+
+def _h_energy_regen_per_turn(tag: EffectTag, ctx: Ctx) -> None:
+    """ENERGY_REGEN_PER_TURN: 回合结束回复能量（养分重吸收）"""
+    amount = tag.params.get("amount", 3)
+    ctx.user.gain_energy(amount)
+
+
+def _h_steal_all_enemy_energy(tag: EffectTag, ctx: Ctx) -> None:
+    """STEAL_ALL_ENEMY_ENERGY: 回合结束偷取敌方全队能量（毒蘑菇）"""
+    amount = tag.params.get("amount", 1)
+    enemy_team = ctx.state.team_b if ctx.team == "a" else ctx.state.team_a
+    for p in enemy_team:
+        if not p.is_fainted:
+            stolen = min(p.energy, amount)
+            p.energy = max(0, p.energy - amount)
+            ctx.user.gain_energy(stolen)
+
+
+def _h_enemy_switch_debuff(tag: EffectTag, ctx: Ctx) -> None:
+    """ENEMY_SWITCH_DEBUFF: 敌方换人后对入场者施加效果（做噩梦/下黑手）"""
+    if tag.params.get("energy_loss"):
+        ctx.target.energy = max(0, ctx.target.energy - tag.params["energy_loss"])
+    if tag.params.get("poison"):
+        ctx.target.poison_stacks += tag.params["poison"]
+
+
+def _h_enemy_switch_self_cost_reduce(tag: EffectTag, ctx: Ctx) -> None:
+    """ENEMY_SWITCH_SELF_COST_REDUCE: 敌方换人时自己全技能能耗-N（珊瑚骨）"""
+    reduce = tag.params.get("reduce", 3)
+    for s in ctx.user.skills:
+        s.energy_cost = max(0, s.energy_cost + _adjust_cost_delta(ctx.user, -reduce))
+
+
+def _h_on_interrupt_cooldown(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_INTERRUPT_COOLDOWN: 打断敌方时被打断技能进入冷却（威慑）"""
+    turns = tag.params.get("turns", 2)
+    ctx.user.ability_state["interrupt_cooldown_turns"] = turns
+
+
+def _h_low_cost_skill_power_bonus(tag: EffectTag, ctx: Ctx) -> None:
+    """LOW_COST_SKILL_POWER_BONUS: 能耗≤N的技能威力+M%（挺起胸脯）"""
+    ctx.user.ability_state["low_cost_skill_power_bonus"] = {
+        "cost_threshold": tag.params.get("cost_threshold", 1),
+        "bonus_pct": tag.params.get("bonus_pct", 0.5),
+    }
+
+
+def _h_energy_cost_condition_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """ENERGY_COST_CONDITION_BUFF: 使用能耗为N的技能时获得buff（鼓气/三鼓作气）"""
+    cost = tag.params.get("cost", 0)
+    buff = tag.params.get("buff", {})
+    permanent = tag.params.get("permanent", False)
+    if ctx.skill and getattr(ctx.skill, "_base_energy_cost", ctx.skill.energy_cost) == cost:
+        if buff:
+            _apply_buff(ctx.user, buff)
+
+
+def _h_enemy_tech_total_power(tag: EffectTag, ctx: Ctx) -> None:
+    """ENEMY_TECH_TOTAL_POWER: 敌方技能总能耗越多自己越强（冰钻）"""
+    ctx.user.ability_state["enemy_tech_total_power"] = {
+        "bonus_pct_per_cost": tag.params.get("bonus_pct_per_cost", 0.1),
+    }
+
+
+def _h_half_meteor_full_damage(tag: EffectTag, ctx: Ctx) -> None:
+    """HALF_METEOR_FULL_DAMAGE: 星陨只消耗一半层数但满伤（守望星）"""
+    ctx.user.ability_state["half_meteor_full_damage"] = True
+
+
+# ── 第五批特性原语 handlers ──
+
+def _h_hit_count_per_poison(tag: EffectTag, ctx: Ctx) -> None:
+    """HIT_COUNT_PER_POISON: 侵蚀 — 敌方每有1层中毒，自己连击数+1（仅攻击技能）
+    PASSIVE handler: stores flag in ability_state. Actual hit_count bonus applied in _h_damage.
+    """
+    ctx.user.ability_state["hit_count_per_poison"] = True
+
+
+def _h_first_action_hit_bonus(tag: EffectTag, ctx: Ctx) -> None:
+    """FIRST_ACTION_HIT_BONUS: 噼啪！ — 入场后首次行动使用次数+1（所有技能类型）
+    ON_ENTER: set flag. Actual hit_count bonus applied in _h_damage and cleared after first skill use.
+    """
+    if ctx.result.get("_is_ability_ctx"):
+        # ON_ENTER: set flag
+        if not ctx.result.get("skill"):
+            ctx.user.ability_state["first_action_bonus"] = True
+            return
+        # ON_USE_SKILL: clear the flag (bonus already applied in _h_damage)
+        if ctx.user.ability_state.get("first_action_bonus"):
+            ctx.user.ability_state["first_action_bonus"] = False
+
+
+def _h_fixed_hit_count_all(tag: EffectTag, ctx: Ctx) -> None:
+    """FIXED_HIT_COUNT_ALL: 无差别过滤 — 在场时所有精灵连击数固定为2"""
+    ctx.user.ability_state["fixed_hit_count_all"] = tag.params.get("count", 2)
+
+
+def _h_extra_poison_tick(tag: EffectTag, ctx: Ctx) -> None:
+    """EXTRA_POISON_TICK: 复方汤剂 — 回合结束时敌方中毒额外触发1次"""
+    if ctx.target.poison_stacks > 0 and not ctx.target.is_fainted:
+        dmg = max(1, int(ctx.target.hp * 0.03 * ctx.target.poison_stacks))
+        ctx.target.current_hp -= dmg
+        if ctx.target.current_hp <= 0:
+            ctx.target.current_hp = 0
+            from src.models import StatusType
+            ctx.target.status = StatusType.FAINTED
+
+
+def _h_conditional_entry_buff_total_cost(tag: EffectTag, ctx: Ctx) -> None:
+    """CONDITIONAL_ENTRY_BUFF_TOTAL_COST: 保守派 — 总技能能耗<4时双防+80%"""
+    threshold = tag.params.get("cost_threshold", 4)
+    total_cost = sum(getattr(s, "_base_energy_cost", s.energy_cost) for s in ctx.user.skills)
+    if total_cost < threshold:
+        buff = tag.params.get("buff", {"def": 0.8, "spdef": 0.8})
+        _apply_buff(ctx.user, buff)
+
+
+def _h_conditional_entry_buff_mp(tag: EffectTag, ctx: Ctx) -> None:
+    """CONDITIONAL_ENTRY_BUFF_MP: 图书守卫者 — MP=1时双攻+50%  /  构装契约者 — 敌方MP=1时双防+50%"""
+    mp_value = tag.params.get("mp_value", 1)
+    check_enemy = tag.params.get("check_enemy", False)
+    team = ctx.team
+    if check_enemy:
+        mp = ctx.state.mp_b if team == "a" else ctx.state.mp_a
+    else:
+        mp = ctx.state.mp_a if team == "a" else ctx.state.mp_b
+    if mp == mp_value:
+        buff = tag.params.get("buff", {"atk": 0.5, "spatk": 0.5})
+        _apply_buff(ctx.user, buff)
+
+
+def _h_immune_zero_energy_attacker(tag: EffectTag, ctx: Ctx) -> None:
+    """IMMUNE_ZERO_ENERGY_ATTACKER: 惊吓 — 能量=0的精灵无法对自己造伤"""
+    ctx.user.ability_state["immune_zero_energy_attacker"] = True
+
+
+def _h_immune_low_cost_attack(tag: EffectTag, ctx: Ctx) -> None:
+    """IMMUNE_LOW_COST_ATTACK: 逐魂鸟 — 能耗≤1的攻击技能无法对自己造伤"""
+    ctx.user.ability_state["immune_low_cost_attack"] = tag.params.get("cost_threshold", 1)
+
+
+def _h_entry_self_damage(tag: EffectTag, ctx: Ctx) -> None:
+    """ENTRY_SELF_DAMAGE: 铃兰晚钟 — 首次入场时失去一半当前HP"""
+    if ctx.user.ability_state.get("entry_self_damage_triggered"):
+        return
+    ctx.user.ability_state["entry_self_damage_triggered"] = True
+    ctx.user.current_hp = max(1, ctx.user.current_hp // 2)
+
+
+# ── 第六批特性原语 handlers ──
+
+def _h_specific_skill_power_bonus(tag: EffectTag, ctx: Ctx) -> None:
+    """SPECIFIC_SKILL_POWER_BONUS: 共鸣 — 携带的指定名称技能威力+N"""
+    skill_name = tag.params.get("skill_name", "")
+    power_bonus = tag.params.get("power_bonus", 20)
+    for s in ctx.user.skills:
+        if s.name == skill_name:
+            if not hasattr(s, "_ability_base_power"):
+                s._ability_base_power = s.power
+            s.power = s._ability_base_power + power_bonus
+            break
+
+
+def _h_energy_no_cap(tag: EffectTag, ctx: Ctx) -> None:
+    """ENERGY_NO_CAP: 多人宿舍 — 能量可超过上限（无上限）"""
+    ctx.user.ability_state["energy_no_cap"] = True
+
+
+def _h_hp_for_energy(tag: EffectTag, ctx: Ctx) -> None:
+    """HP_FOR_ENERGY: 石头大餐 — 能量不足时每缺1点消耗5%HP代替"""
+    ctx.user.ability_state["hp_for_energy"] = True
+
+
+def _h_shuffle_skills_reduce_last(tag: EffectTag, ctx: Ctx) -> None:
+    """SHUFFLE_SKILLS_REDUCE_LAST: 盲拧 — 回合开始打乱技能顺序,4号位能耗-4"""
+    cost_reduce = tag.params.get("cost_reduce", 4)
+    skills = ctx.user.skills
+    if len(skills) >= 2:
+        random.shuffle(skills)
+        # 新4号位(最后一个)能耗-4
+        if len(skills) >= 4:
+            last = skills[3]
+            last.energy_cost = max(0, last.energy_cost - _adjust_cost_delta(ctx.user, cost_reduce))
+
+
+def _h_weather_conditional_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """WEATHER_CONDITIONAL_BUFF: 得寸进尺 — 天气条件下获得buff"""
+    weather = tag.params.get("weather", "rain")
+    buff = tag.params.get("buff", {})
+    if getattr(ctx.state, "weather", None) == weather:
+        _apply_buff(ctx.user, buff)
+
+
+def _h_fainted_allies_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """FAINTED_ALLIES_BUFF: 悲悯/悼亡 — 每有1只力竭精灵双攻+N%"""
+    buff_per = tag.params.get("buff_per", {"atk": 0.3, "spatk": 0.3})
+    scope = tag.params.get("scope", "allies")
+    my_team = ctx.state.team_a if ctx.team == "a" else ctx.state.team_b
+    enemy_team = ctx.state.team_b if ctx.team == "a" else ctx.state.team_a
+    fainted = sum(1 for p in my_team if p.is_fainted)
+    if scope == "all":
+        fainted += sum(1 for p in enemy_team if p.is_fainted)
+    if fainted > 0:
+        scaled_buff = {k: v * fainted for k, v in buff_per.items()}
+        _apply_buff(ctx.user, scaled_buff)
+
+
+def _h_on_super_effective_buff(tag: EffectTag, ctx: Ctx) -> None:
+    """ON_SUPER_EFFECTIVE_BUFF: 最好的伙伴 — 造成克制伤害后buff+回能"""
+    if not ctx.skill:
+        return
+    from src.models import get_type_effectiveness
+    effectiveness = get_type_effectiveness(ctx.skill.skill_type, ctx.target.pokemon_type)
+    if effectiveness > 1.0:
+        buff = tag.params.get("buff", {})
+        energy = tag.params.get("energy", 0)
+        if buff:
+            _apply_buff(ctx.user, buff)
+        if energy:
+            ctx.user.gain_energy(energy)
+
+
+def _h_enemy_element_diversity_power(tag: EffectTag, ctx: Ctx) -> None:
+    """ENEMY_ELEMENT_DIVERSITY_POWER: 血型吸引 — 敌方每携带1种系别威力+N"""
+    power_per_type = tag.params.get("power_per_type", 10)
+    unique_types = set()
+    for s in ctx.target.skills:
+        unique_types.add(s.skill_type)
+    bonus = len(unique_types) * power_per_type
+    if bonus > 0:
+        ctx.user.skill_power_bonus += bonus
+
+
+def _h_kill_mp_penalty(tag: EffectTag, ctx: Ctx) -> None:
+    """KILL_MP_PENALTY: 付给恶魔的赎价 — 击败敌方-1MP / 被击败自己-1MP
+    ON_KILL: 敌方额外-1MP. ON_FAINT: 己方额外-1MP.
+    """
+    # Determine context based on timing (stored by the caller in result)
+    timing = ctx.result.get("_ability_timing")
+    if timing == "ON_KILL":
+        # 击败敌方时，敌方额外-1MP
+        if ctx.team == "a":
+            ctx.state.mp_b = max(0, ctx.state.mp_b - 1)
+        else:
+            ctx.state.mp_a = max(0, ctx.state.mp_a - 1)
+    elif timing == "ON_FAINT":
+        # 被击败时，己方额外-1MP
+        if ctx.team == "a":
+            ctx.state.mp_a = max(0, ctx.state.mp_a - 1)
+        else:
+            ctx.state.mp_b = max(0, ctx.state.mp_b - 1)
+
+
 _HANDLERS: Dict[E, Callable] = {
     E.DAMAGE:                   _h_damage,
     E.SELF_BUFF:                _h_self_buff,
@@ -1912,6 +2359,55 @@ _HANDLERS: Dict[E, Callable] = {
     E.POISON_STAT_DEBUFF:            _h_poison_stat_debuff,
     E.POISON_ON_SKILL_APPLY:         _h_poison_on_skill_apply,
     E.FREEZE_IMMUNITY_AND_BUFF:      _h_freeze_immunity_and_buff,
+    # ── 通用特性原语 (批量新增) ──
+    E.EXTRA_FREEZE_ON_FREEZE:        _h_extra_freeze_on_freeze,
+    E.FAINT_NO_MP_LOSS:              _h_faint_no_mp_loss,
+    E.ON_SKILL_ELEMENT_BUFF:         _h_on_skill_element_buff,
+    E.ON_SKILL_ELEMENT_POISON:       _h_on_skill_element_poison,
+    E.ON_SKILL_ELEMENT_COST_REDUCE:  _h_on_skill_element_cost_reduce,
+    E.ON_SKILL_ELEMENT_HEAL:         _h_on_skill_element_heal,
+    E.ON_SKILL_ELEMENT_ENEMY_ENERGY: _h_on_skill_element_enemy_energy,
+    E.CARRY_SKILL_POWER_BONUS:       _h_carry_skill_power_bonus,
+    E.CARRY_SKILL_COST_REDUCE:       _h_carry_skill_cost_reduce,
+    E.CARRY_ELEMENT_COUNT_BUFF:      _h_carry_element_count_buff,
+    E.ON_KILL_BUFF:                  _h_on_kill_buff,
+    E.RECOIL_DAMAGE:                 _h_recoil_damage,
+    E.ENTRY_BUFF:                    _h_entry_buff,
+    E.ON_ENTER_GRANT_DRAIN:          _h_on_enter_grant_drain,
+    E.ENEMY_ALL_COST_UP:             _h_enemy_all_cost_up,
+    E.ENTRY_FREEZE_EXTRA:            _h_entry_freeze_extra,
+    E.LEAVE_HEAL_ALLY:               _h_leave_heal_ally,
+    E.LEAVE_BUFF_ALLY:               _h_leave_buff_ally,
+    E.LEAVE_ENERGY_REFILL:           _h_leave_energy_refill,
+    E.ENERGY_REGEN_PER_TURN:         _h_energy_regen_per_turn,
+    E.STEAL_ALL_ENEMY_ENERGY:        _h_steal_all_enemy_energy,
+    E.ENEMY_SWITCH_DEBUFF:           _h_enemy_switch_debuff,
+    E.ENEMY_SWITCH_SELF_COST_REDUCE: _h_enemy_switch_self_cost_reduce,
+    E.ON_INTERRUPT_COOLDOWN:         _h_on_interrupt_cooldown,
+    E.LOW_COST_SKILL_POWER_BONUS:    _h_low_cost_skill_power_bonus,
+    E.ENERGY_COST_CONDITION_BUFF:    _h_energy_cost_condition_buff,
+    E.ENEMY_TECH_TOTAL_POWER:        _h_enemy_tech_total_power,
+    E.HALF_METEOR_FULL_DAMAGE:       _h_half_meteor_full_damage,
+    # ── 第五批特性原语 ──
+    E.HIT_COUNT_PER_POISON:          _h_hit_count_per_poison,
+    E.FIRST_ACTION_HIT_BONUS:        _h_first_action_hit_bonus,
+    E.FIXED_HIT_COUNT_ALL:           _h_fixed_hit_count_all,
+    E.EXTRA_POISON_TICK:             _h_extra_poison_tick,
+    E.CONDITIONAL_ENTRY_BUFF_TOTAL_COST: _h_conditional_entry_buff_total_cost,
+    E.CONDITIONAL_ENTRY_BUFF_MP:     _h_conditional_entry_buff_mp,
+    E.IMMUNE_ZERO_ENERGY_ATTACKER:   _h_immune_zero_energy_attacker,
+    E.IMMUNE_LOW_COST_ATTACK:        _h_immune_low_cost_attack,
+    E.ENTRY_SELF_DAMAGE:             _h_entry_self_damage,
+    # ── 第六批特性原语 ──
+    E.SPECIFIC_SKILL_POWER_BONUS:    _h_specific_skill_power_bonus,
+    E.ENERGY_NO_CAP:                 _h_energy_no_cap,
+    E.HP_FOR_ENERGY:                 _h_hp_for_energy,
+    E.SHUFFLE_SKILLS_REDUCE_LAST:    _h_shuffle_skills_reduce_last,
+    E.WEATHER_CONDITIONAL_BUFF:      _h_weather_conditional_buff,
+    E.FAINTED_ALLIES_BUFF:           _h_fainted_allies_buff,
+    E.ON_SUPER_EFFECTIVE_BUFF:       _h_on_super_effective_buff,
+    E.ENEMY_ELEMENT_DIVERSITY_POWER: _h_enemy_element_diversity_power,
+    E.KILL_MP_PENALTY:               _h_kill_mp_penalty,
 }
 
 # 特性中部分 handler 与技能略有不同，按 tag type 覆盖
@@ -1967,6 +2463,55 @@ _ABILITY_HANDLER_OVERRIDES: Dict[E, Callable] = {
     E.POISON_STAT_DEBUFF:            _h_poison_stat_debuff,
     E.POISON_ON_SKILL_APPLY:         _h_poison_on_skill_apply,
     E.FREEZE_IMMUNITY_AND_BUFF:      _h_freeze_immunity_and_buff,
+    # ── 通用特性原语 (批量新增) ──
+    E.EXTRA_FREEZE_ON_FREEZE:        _h_extra_freeze_on_freeze,
+    E.FAINT_NO_MP_LOSS:              _h_faint_no_mp_loss,
+    E.ON_SKILL_ELEMENT_BUFF:         _h_on_skill_element_buff,
+    E.ON_SKILL_ELEMENT_POISON:       _h_on_skill_element_poison,
+    E.ON_SKILL_ELEMENT_COST_REDUCE:  _h_on_skill_element_cost_reduce,
+    E.ON_SKILL_ELEMENT_HEAL:         _h_on_skill_element_heal,
+    E.ON_SKILL_ELEMENT_ENEMY_ENERGY: _h_on_skill_element_enemy_energy,
+    E.CARRY_SKILL_POWER_BONUS:       _h_carry_skill_power_bonus,
+    E.CARRY_SKILL_COST_REDUCE:       _h_carry_skill_cost_reduce,
+    E.CARRY_ELEMENT_COUNT_BUFF:      _h_carry_element_count_buff,
+    E.ON_KILL_BUFF:                  _h_on_kill_buff,
+    E.RECOIL_DAMAGE:                 _h_recoil_damage,
+    E.ENTRY_BUFF:                    _h_entry_buff,
+    E.ON_ENTER_GRANT_DRAIN:          _h_on_enter_grant_drain,
+    E.ENEMY_ALL_COST_UP:             _h_enemy_all_cost_up,
+    E.ENTRY_FREEZE_EXTRA:            _h_entry_freeze_extra,
+    E.LEAVE_HEAL_ALLY:               _h_leave_heal_ally,
+    E.LEAVE_BUFF_ALLY:               _h_leave_buff_ally,
+    E.LEAVE_ENERGY_REFILL:           _h_leave_energy_refill,
+    E.ENERGY_REGEN_PER_TURN:         _h_energy_regen_per_turn,
+    E.STEAL_ALL_ENEMY_ENERGY:        _h_steal_all_enemy_energy,
+    E.ENEMY_SWITCH_DEBUFF:           _h_enemy_switch_debuff,
+    E.ENEMY_SWITCH_SELF_COST_REDUCE: _h_enemy_switch_self_cost_reduce,
+    E.ON_INTERRUPT_COOLDOWN:         _h_on_interrupt_cooldown,
+    E.LOW_COST_SKILL_POWER_BONUS:    _h_low_cost_skill_power_bonus,
+    E.ENERGY_COST_CONDITION_BUFF:    _h_energy_cost_condition_buff,
+    E.ENEMY_TECH_TOTAL_POWER:        _h_enemy_tech_total_power,
+    E.HALF_METEOR_FULL_DAMAGE:       _h_half_meteor_full_damage,
+    # ── 第五批特性原语 ──
+    E.HIT_COUNT_PER_POISON:          _h_hit_count_per_poison,
+    E.FIRST_ACTION_HIT_BONUS:        _h_first_action_hit_bonus,
+    E.FIXED_HIT_COUNT_ALL:           _h_fixed_hit_count_all,
+    E.EXTRA_POISON_TICK:             _h_extra_poison_tick,
+    E.CONDITIONAL_ENTRY_BUFF_TOTAL_COST: _h_conditional_entry_buff_total_cost,
+    E.CONDITIONAL_ENTRY_BUFF_MP:     _h_conditional_entry_buff_mp,
+    E.IMMUNE_ZERO_ENERGY_ATTACKER:   _h_immune_zero_energy_attacker,
+    E.IMMUNE_LOW_COST_ATTACK:        _h_immune_low_cost_attack,
+    E.ENTRY_SELF_DAMAGE:             _h_entry_self_damage,
+    # ── 第六批特性原语 ──
+    E.SPECIFIC_SKILL_POWER_BONUS:    _h_specific_skill_power_bonus,
+    E.ENERGY_NO_CAP:                 _h_energy_no_cap,
+    E.HP_FOR_ENERGY:                 _h_hp_for_energy,
+    E.SHUFFLE_SKILLS_REDUCE_LAST:    _h_shuffle_skills_reduce_last,
+    E.WEATHER_CONDITIONAL_BUFF:      _h_weather_conditional_buff,
+    E.FAINTED_ALLIES_BUFF:           _h_fainted_allies_buff,
+    E.ON_SUPER_EFFECTIVE_BUFF:       _h_on_super_effective_buff,
+    E.ENEMY_ELEMENT_DIVERSITY_POWER: _h_enemy_element_diversity_power,
+    E.KILL_MP_PENALTY:               _h_kill_mp_penalty,
 }
 
 
@@ -2404,6 +2949,7 @@ class EffectExecutor:
             )
             # 标记为 ability 上下文
             context["_is_ability_ctx"] = True
+            context["_ability_timing"] = timing.name
 
             for tag in ae.effects:
                 _apply_tag(tag, ctx, ability_mode=True)
