@@ -40,6 +40,25 @@ class E(Enum):
     # ── 印记系统 (全队共享, 换人不消失) ──
     POISON_MARK = auto()             # 中毒印记  params: {"stacks": 1}
     MOISTURE_MARK = auto()           # 湿润印记  params: {"stacks": 1}
+    DRAGON_MARK = auto()             # 龙噬印记  params: {"stacks": 1}  释放基础能耗==5技能时攻击+40%
+    WIND_MARK = auto()               # 风起印记  params: {"stacks": 1}  先手攻击时威力+20%
+    CHARGE_MARK = auto()             # 蓄电印记  params: {"stacks": 1}  入场首回合技能威力+10
+    SOLAR_MARK = auto()              # 光合印记  params: {"stacks": 1}  回合结束能量+1
+    ATTACK_MARK = auto()             # 攻击印记  params: {"stacks": 1}  威力提升10%
+    SLOW_MARK = auto()               # 减速印记  params: {"stacks": 1}  降低速度10%
+    SLUGGISH_MARK = auto()           # 迟缓印记  params: {"stacks": 1}  后手攻击时威力+30%
+    SPIRIT_MARK = auto()             # 降灵印记  params: {"stacks": 1}  换上场失去1能量
+    METEOR_MARK = auto()             # 星陨印记  params: {"stacks": 1}  造成伤害时消耗,每层30威力魔伤
+    THORN_MARK = auto()              # 荆刺印记  params: {"stacks": 1}  敌方入场失去6%HP
+
+    # ── 印记特殊操作 ──
+    DISPEL_ENEMY_MARKS = auto()      # 驱散敌方印记  params: {}
+    CONVERT_MARKS_TO_BURN = auto()   # 印记→灼烧转换  params: {"ratio": 3}
+    DISPEL_MARKS_TO_BURN = auto()    # 驱散所有印记,每层→灼烧  params: {"burn_per_mark": 5}
+    CONSUME_MARKS_HEAL = auto()      # 驱散敌方印记+回血  params: {"heal_pct_per_mark": 0.1}
+    MARKS_TO_METEOR = auto()         # 印记层数→星陨  params: {}
+    STEAL_MARKS = auto()             # 偷取敌方印记  params: {}
+    ENERGY_COST_PER_ENEMY_MARK = auto()  # 每层敌方印记能耗-1  params: {}
 
     # ── 机制 ──
     DAMAGE_REDUCTION = auto()        # 减伤       params: {"pct": 0.7} = 减70%

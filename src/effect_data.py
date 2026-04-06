@@ -298,6 +298,106 @@ SKILL_EFFECTS = {
         SE(SkillTiming.ON_USE, [T(E.DAMAGE)]),
         SE(SkillTiming.ON_HIT, [T(E.HEAL_ENERGY, amount=6)], on_kill=True),
     ],
+
+    # ============================================================
+    #  印记技能
+    # ============================================================
+
+    # 龙威: 自己获得1层龙噬印记
+    "龙威": [
+        SE(SkillTiming.ON_USE, [T(E.DRAGON_MARK, stacks=1, target="self")]),
+    ],
+
+    # 风起: 自己获得1层风起印记
+    "风起": [
+        SE(SkillTiming.ON_USE, [T(E.WIND_MARK, stacks=1, target="self")]),
+    ],
+
+    # 增程电池: 自己获得1层蓄电印记
+    "增程电池": [
+        SE(SkillTiming.ON_USE, [T(E.CHARGE_MARK, stacks=1, target="self")]),
+    ],
+
+    # 光合作用: 自己获得1层光合印记
+    "光合作用": [
+        SE(SkillTiming.ON_USE, [T(E.SOLAR_MARK, stacks=1, target="self")]),
+    ],
+
+    # 主场优势: 自己获得1层攻击印记
+    "主场优势": [
+        SE(SkillTiming.ON_USE, [T(E.ATTACK_MARK, stacks=1, target="self")]),
+    ],
+
+    # 速冻: 敌方获得2层减速印记
+    "速冻": [
+        SE(SkillTiming.ON_USE, [T(E.SLOW_MARK, stacks=2)]),
+    ],
+
+    # 降灵: 敌方获得1层降灵印记
+    "降灵": [
+        SE(SkillTiming.ON_USE, [T(E.SPIRIT_MARK, stacks=1)]),
+    ],
+
+    # 棘刺: 敌方获得1层荆刺印记
+    "棘刺": [
+        SE(SkillTiming.ON_USE, [T(E.THORN_MARK, stacks=1)]),
+    ],
+
+    # 潮汐: 减伤60%，应对攻击: 自己获得1层湿润印记
+    "潮汐": [
+        SE(SkillTiming.ON_USE, [T(E.DAMAGE_REDUCTION, pct=0.6)]),
+        SE(SkillTiming.ON_COUNTER, [T(E.MOISTURE_MARK, stacks=1, target="self")], category="attack"),
+    ],
+
+    # 冰蛋壳: 减伤60%，应对攻击: 敌方获得2层减速印记
+    "冰蛋壳": [
+        SE(SkillTiming.ON_USE, [T(E.DAMAGE_REDUCTION, pct=0.6)]),
+        SE(SkillTiming.ON_COUNTER, [T(E.SLOW_MARK, stacks=2)], category="attack"),
+    ],
+
+    # ============================================================
+    #  印记驱散 / 转换技能
+    # ============================================================
+
+    # 焚毁: 造成魔伤，驱散敌方所有印记
+    "焚毁": [
+        SE(SkillTiming.ON_USE, [T(E.DAMAGE), T(E.DISPEL_ENEMY_MARKS)]),
+    ],
+
+    # 炎爆术: 将敌方印记转换为三倍的灼烧层数
+    "炎爆术": [
+        SE(SkillTiming.ON_USE, [T(E.CONVERT_MARKS_TO_BURN, ratio=3)]),
+    ],
+
+    # 焚烧烙印: 驱散双方所有印记，每驱散1层，敌方获得5层灼烧
+    "焚烧烙印": [
+        SE(SkillTiming.ON_USE, [T(E.DISPEL_MARKS_TO_BURN, burn_per_mark=5)]),
+    ],
+
+    # 食腐: 驱散敌方印记，每层印记回复自己10%生命
+    "食腐": [
+        SE(SkillTiming.ON_USE, [T(E.CONSUME_MARKS_HEAL, heal_pct_per_mark=0.1)]),
+    ],
+
+    # 心灵洞悉: 敌方获得星陨，获得层数等于敌方印记层数
+    "心灵洞悉": [
+        SE(SkillTiming.ON_USE, [T(E.MARKS_TO_METEOR)]),
+    ],
+
+    # 翅刃: 造成物伤，驱散敌方所有印记，应对状态: 偷取印记
+    "翅刃": [
+        SE(SkillTiming.ON_USE, [T(E.DAMAGE), T(E.DISPEL_ENEMY_MARKS)]),
+        SE(SkillTiming.ON_COUNTER, [T(E.STEAL_MARKS)], category="status"),
+    ],
+
+    # 四维降解: 造成魔伤，敌方每有1层印记，本技能能耗-1
+    "四维降解": [
+        SE(SkillTiming.PRE_USE, [T(E.ENERGY_COST_PER_ENEMY_MARK)]),
+        SE(SkillTiming.ON_USE, [T(E.DAMAGE)]),
+    ],
+
+    # 蓄势待发: 自己获得1层蓄势印记 (效果待确认，暂只添加印记)
+    # "蓄势待发": [],
 }
 
 

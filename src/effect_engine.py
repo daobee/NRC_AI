@@ -348,19 +348,25 @@ def _execute_agility_old(pokemon: "Pokemon", enemy: "Pokemon", skill: "Skill") -
 # ============================================================
 
 def _h_damage(tag: EffectTag, ctx: Ctx) -> None:
-    from src.battle import DamageCalculator
+    from src.battle import DamageCalculator, get_mark_damage_modifiers
     skill = ctx.skill
+
+    # ── 印记伤害修正 ──
+    mark_mods = get_mark_damage_modifiers(ctx.state, ctx.team, ctx.is_first, skill)
+
     power = (
         skill.power
         + ctx.user.skill_power_bonus
         + ctx.user.next_attack_power_bonus
         + ctx.result.get("_power_bonus", 0)
+        + mark_mods["power_bonus"]
     )
     power_mult = (
         1.0
         + ctx.user.skill_power_pct_mod
         + ctx.user.next_attack_power_pct
         + (ctx.result.get("_power_mult", 1.0) - 1.0)
+        + (mark_mods["power_mult"] - 1.0)
     )
     if power_mult != 1.0:
         power = int(power * power_mult)
@@ -373,12 +379,43 @@ def _h_damage(tag: EffectTag, ctx: Ctx) -> None:
                 * ctx.result.get("_hit_count_mult", 1.0)
             ),
         )
+        # 龙噬印记的攻击倍率：临时加到 atk_up
+        old_atk_up = ctx.user.atk_up
+        old_spatk_up = ctx.user.spatk_up
+        if mark_mods["atk_mult"] > 1.0:
+            extra = mark_mods["atk_mult"] - 1.0
+            ctx.user.atk_up += extra
+            ctx.user.spatk_up += extra
+
         dmg = DamageCalculator.calculate(ctx.user, ctx.target, skill,
                                          power_override=power, weather=weather,
                                          hit_count_override=hit_count)
+
+        # 恢复临时修正
+        ctx.user.atk_up = old_atk_up
+        ctx.user.spatk_up = old_spatk_up
+
         ctx.result["damage"] = ctx.result.get("damage", 0) + dmg
         if ctx.user.next_attack_power_bonus or ctx.user.next_attack_power_pct:
             ctx.result["_consume_next_attack_mod"] = True
+
+        # 星陨印记：造成伤害后消耗层数，造成额外魔伤
+        meteor_stacks = mark_mods["meteor_mark_stacks"]
+        if meteor_stacks > 0 and dmg > 0:
+            enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+            enemy_marks["meteor_mark"] = 0
+            meteor_power = 30 * meteor_stacks
+            # 星陨印记造成魔法伤害（用攻方魔攻 vs 被攻方魔防）
+            from src.models import SkillCategory, Type
+            e_spatk = ctx.user.effective_spatk()
+            t_spdef = max(1.0, ctx.target.effective_spdef())
+            meteor_dmg = max(1, int((e_spatk / t_spdef) * meteor_power * 0.9))
+            ctx.target.current_hp -= meteor_dmg
+            ctx.result["damage"] = ctx.result.get("damage", 0) + meteor_dmg
+            if ctx.target.current_hp <= 0:
+                ctx.target.current_hp = 0
+                from src.models import StatusType
+                ctx.target.status = StatusType.FAINTED
 
 
 def _h_self_buff(tag: EffectTag, ctx: Ctx) -> None:
@@ -508,7 +545,127 @@ def _h_moisture_mark(tag: EffectTag, ctx: Ctx) -> None:
         marks = ctx.state.marks_a if ctx.team == "a" else ctx.state.marks_b
     else:
         marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
-    marks["moisture_mark"] = marks.get("moisture_mark", 0) + tag.params.get("stacks", 1)
+    stacks = tag.params.get("stacks", 1)
+    marks["moisture_mark"] = marks.get("moisture_mark", 0) + stacks
+    # 湿润印记立即生效：释放后当回合就减能耗，不等下回合
+    team_id = ctx.team if tgt == "self" else ("b" if ctx.team == "a" else "a")
+    team_list = ctx.state.team_a if team_id == "a" else ctx.state.team_b
+    for p in team_list:
+        for s in p.skills:
+            delta = -stacks
+            if p.ability_state.get("cost_invert"):
+                delta = -delta
+            s.energy_cost = max(0, s.energy_cost + delta)
+    marks["moisture_mark"] = 0  # 已消耗
+
+
+def _h_mark_generic(tag: EffectTag, ctx: Ctx, mark_key: str) -> None:
+    """通用印记 handler：根据 target 参数放入对应队伍的 marks dict。"""
+    tgt = tag.params.get("target", "enemy")
+    if tgt == "self":
+        marks = ctx.state.marks_a if ctx.team == "a" else ctx.state.marks_b
+    else:
+        marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    marks[mark_key] = marks.get(mark_key, 0) + tag.params.get("stacks", 1)
+
+
+def _h_dragon_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "dragon_mark")
+
+def _h_wind_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "wind_mark")
+
+def _h_charge_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "charge_mark")
+
+def _h_solar_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "solar_mark")
+
+def _h_attack_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "attack_mark")
+
+def _h_slow_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "slow_mark")
+
+def _h_sluggish_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "sluggish_mark")
+
+def _h_spirit_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "spirit_mark")
+
+def _h_meteor_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "meteor_mark")
+
+def _h_thorn_mark(tag: EffectTag, ctx: Ctx) -> None:
+    _h_mark_generic(tag, ctx, "thorn_mark")
+
+
+# ── 印记特殊操作 handler ──
+
+def _h_dispel_enemy_marks(tag: EffectTag, ctx: Ctx) -> None:
+    """驱散敌方所有印记"""
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    enemy_marks.clear()
+
+
+def _h_convert_marks_to_burn(tag: EffectTag, ctx: Ctx) -> None:
+    """炎爆术: 将敌方印记转换为 ratio 倍灼烧层数"""
+    ratio = tag.params.get("ratio", 3)
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    total = sum(v for v in enemy_marks.values() if isinstance(v, (int, float)))
+    if total > 0:
+        ctx.target.burn_stacks += int(total * ratio)
+        enemy_marks.clear()
+
+
+def _h_dispel_marks_to_burn(tag: EffectTag, ctx: Ctx) -> None:
+    """焚烧烙印: 驱散双方所有印记，每层→N层灼烧"""
+    burn_per = tag.params.get("burn_per_mark", 5)
+    total = 0
+    total += sum(v for v in ctx.state.marks_a.values() if isinstance(v, (int, float)))
+    total += sum(v for v in ctx.state.marks_b.values() if isinstance(v, (int, float)))
+    ctx.state.marks_a.clear()
+    ctx.state.marks_b.clear()
+    if total > 0:
+        ctx.target.burn_stacks += int(total * burn_per)
+
+
+def _h_consume_marks_heal(tag: EffectTag, ctx: Ctx) -> None:
+    """食腐: 驱散敌方印记，每层回复自己 heal_pct 生命"""
+    heal_pct = tag.params.get("heal_pct_per_mark", 0.1)
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    total = sum(v for v in enemy_marks.values() if isinstance(v, (int, float)))
+    enemy_marks.clear()
+    if total > 0:
+        heal = int(ctx.user.hp * heal_pct * total)
+        ctx.user.current_hp = min(ctx.user.hp, ctx.user.current_hp + heal)
+
+
+def _h_marks_to_meteor(tag: EffectTag, ctx: Ctx) -> None:
+    """心灵洞悉: 敌方获得星陨，层数=敌方印记总层数"""
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    total = sum(v for v in enemy_marks.values() if isinstance(v, (int, float)))
+    if total > 0:
+        ctx.target.meteor_stacks += int(total)
+        if ctx.target.meteor_countdown <= 0:
+            ctx.target.meteor_countdown = 3
+
+
+def _h_steal_marks(tag: EffectTag, ctx: Ctx) -> None:
+    """翅刃应对时: 偷取敌方印记给己方"""
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    my_marks = ctx.state.marks_a if ctx.team == "a" else ctx.state.marks_b
+    for k, v in enemy_marks.items():
+        my_marks[k] = my_marks.get(k, 0) + v
+    enemy_marks.clear()
+
+
+def _h_energy_cost_per_enemy_mark(tag: EffectTag, ctx: Ctx) -> None:
+    """四维降解: 敌方每层印记能耗-1"""
+    enemy_marks = ctx.state.marks_b if ctx.team == "a" else ctx.state.marks_a
+    total = sum(v for v in enemy_marks.values() if isinstance(v, (int, float)))
+    if total > 0:
+        ctx.result["_energy_refund"] = ctx.result.get("_energy_refund", 0) + int(total)
 
 
 def _h_damage_reduction(tag: EffectTag, ctx: Ctx) -> None:
@@ -1206,6 +1363,23 @@ _HANDLERS: Dict[E, Callable] = {
     E.METEOR:                   _h_meteor,
     E.POISON_MARK:              _h_poison_mark,
     E.MOISTURE_MARK:            _h_moisture_mark,
+    E.DRAGON_MARK:              _h_dragon_mark,
+    E.WIND_MARK:                _h_wind_mark,
+    E.CHARGE_MARK:              _h_charge_mark,
+    E.SOLAR_MARK:               _h_solar_mark,
+    E.ATTACK_MARK:              _h_attack_mark,
+    E.SLOW_MARK:                _h_slow_mark,
+    E.SLUGGISH_MARK:            _h_sluggish_mark,
+    E.SPIRIT_MARK:              _h_spirit_mark,
+    E.METEOR_MARK:              _h_meteor_mark,
+    E.THORN_MARK:               _h_thorn_mark,
+    E.DISPEL_ENEMY_MARKS:       _h_dispel_enemy_marks,
+    E.CONVERT_MARKS_TO_BURN:    _h_convert_marks_to_burn,
+    E.DISPEL_MARKS_TO_BURN:     _h_dispel_marks_to_burn,
+    E.CONSUME_MARKS_HEAL:       _h_consume_marks_heal,
+    E.MARKS_TO_METEOR:          _h_marks_to_meteor,
+    E.STEAL_MARKS:              _h_steal_marks,
+    E.ENERGY_COST_PER_ENEMY_MARK: _h_energy_cost_per_enemy_mark,
     E.DAMAGE_REDUCTION:         _h_damage_reduction,
     E.FORCE_SWITCH:             _h_force_switch,
     E.FORCE_ENEMY_SWITCH:       _h_force_enemy_switch,
