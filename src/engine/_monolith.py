@@ -3613,7 +3613,8 @@ class EffectExecutor:
     ) -> Dict:
         """在指定时机触发特性效果。"""
         result = {"triggered": False, "damage_reduction": 0}
-        context = context or {}
+        if context is None:
+            context = {}
 
         for ae in ability_effects:
             if ae.timing != timing:

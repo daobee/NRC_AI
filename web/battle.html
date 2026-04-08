@@ -708,9 +708,9 @@ function updateSprite(side,p){
   container.appendChild(el);
 
   // 倒地透明
-  const opacity = p.is_fainted ? '0.12' : '1';
-  el.style.opacity = opacity;
-
+  el.style.opacity = p.is_fainted ? '0.12' : '1';
+  // hover 显示特性
+  container.title = p.ability || '';
   lbl.textContent = p.name;
 }
 
@@ -720,7 +720,7 @@ function renderStrip(id,team,cur){
   team.forEach((p,i)=>{
     const d=document.createElement('div');
     d.className='mini-poke'+(i===cur?' active':'')+(p.is_fainted?' fainted':'');
-    d.title=p.name;
+    d.title=p.name + (p.ability ? '\n特性: '+p.ability : '');
     const pct=p.hp>0?p.current_hp/p.hp*100:0;
     const col=pct>50?'var(--hp-g)':pct>20?'var(--hp-y)':'var(--hp-r)';
 
