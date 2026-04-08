@@ -257,10 +257,10 @@ class Pokemon:
     next_attack_power_pct: float = 0.0
 
     # 状态层数
-    poison_stacks: int = 0          # 中毒层数 (每层3%/回合, 换人清除)
-    burn_stacks: int = 0            # 燃烧层数 (每层4%/回合, 每回合减半min1, 换人清除)
+    poison_stacks: int = 0          # 中毒层数 (每层3%/回合, 换人不清除)
+    burn_stacks: int = 0            # 燃烧层数 (每层4%/回合, 每回合减半min1, 换人不清除)
     frostbite_damage: int = 0       # 冻伤累计不可恢复伤害 (每回合+hp//12, 换人不清除)
-    leech_stacks: int = 0           # 寄生层数 (每层8%/回合, 换人清除)
+    leech_stacks: int = 0           # 寄生层数 (每层8%/回合, 换人不清除)
     meteor_stacks: int = 0          # 星陨层数 (延迟爆炸)
     meteor_countdown: int = 0       # 星陨倒计时 (>0时每回合-1, =0时引爆)
     cute_stacks: int = 0            # 萌化层数 (可叠加, 换人不清除; 解锁条件性技能效果)
@@ -341,7 +341,8 @@ class Pokemon:
         self.speed_down += skill.enemy_speed
 
     def on_switch_out(self) -> None:
-        """下场时清除：个体Buff（含方向mod）+ 威力乘数 + 中毒 + 燃烧 + 寄生 + 蓄力。冻伤和星陨保留。"""
+        """下场时清除：属性修正(Buff/Debuff) + 威力乘数 + 临时修改 + 蓄力。
+        保留：中毒/灼烧/寄生/冻伤/星陨/萌化（换人不清除，需主动清除技能消除）。"""
         self.atk_up = self.atk_down = 0.0
         self.def_up = self.def_down = 0.0
         self.spatk_up = self.spatk_down = 0.0
@@ -356,10 +357,7 @@ class Pokemon:
         self.skill_power_pct_mod = 0.0
         self.next_attack_power_bonus = 0
         self.next_attack_power_pct = 0.0
-        self.poison_stacks = 0
-        self.burn_stacks = 0
-        self.leech_stacks = 0
-        self.freeze_stacks = 0
+        # 注: poison_stacks/burn_stacks/leech_stacks/freeze_stacks 换人保留
         self.charging_skill_idx = -1
 
     def reset_mods(self) -> None:
