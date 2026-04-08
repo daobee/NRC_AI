@@ -442,6 +442,31 @@ session = BattleSession()
 # ═══════════════════════════════════════
 # 序列化
 # ═══════════════════════════════════════
+# 精灵图标映射（名字 → /icons/NOxxx_名字.png）
+# ═══════════════════════════════════════
+_ICON_CACHE: dict = {}
+
+def _build_icon_cache():
+    global _ICON_CACHE
+    if _ICON_CACHE:
+        return
+    icons_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "spirit_icons")
+    if not os.path.exists(icons_dir):
+        return
+    import re
+    for fname in os.listdir(icons_dir):
+        m = re.match(r'(NO\d+)_(.+)\.png$', fname)
+        if m:
+            name = m.group(2)
+            # 只存第一个（原始形态优先）
+            if name not in _ICON_CACHE:
+                _ICON_CACHE[name] = f"/icons/{fname}"
+
+def _get_icon_url(name: str) -> str:
+    _build_icon_cache()
+    return _ICON_CACHE.get(name, "")
+
+# ═══════════════════════════════════════
 
 def serialize_pokemon(p, is_current=False):
     # ability_state 中有意义的 UI 字段
@@ -456,6 +481,9 @@ def serialize_pokemon(p, is_current=False):
         ability_info.append("预警加速")
     if ability_state.get("cost_invert"):
         ability_info.append("能耗反转")
+    cute = getattr(p, "cute_stacks", 0)
+    if cute > 0:
+        ability_info.append(f"萌化×{cute}")
 
     return {
         "name":            p.name,
@@ -471,6 +499,7 @@ def serialize_pokemon(p, is_current=False):
         "leech_stacks":    p.leech_stacks,
         "meteor_stacks":   p.meteor_stacks,
         "meteor_countdown":p.meteor_countdown,
+        "cute_stacks":     getattr(p, "cute_stacks", 0),
         "charging":        p.charging_skill_idx >= 0,
         # 净值（正=buff，负=debuff）
         "atk_mod":         round((p.atk_up - p.atk_down) * 100),
@@ -491,6 +520,7 @@ def serialize_pokemon(p, is_current=False):
         "speed_down":round(p.speed_down * 100),
         # 特性状态
         "ability_info": ability_info,
+        "icon_url":        _get_icon_url(p.name),
         "skills":          [serialize_skill(s, p.energy, p.cooldowns.get(i, 0))
                             for i, s in enumerate(p.skills)] if is_current else [],
     }
@@ -1066,19 +1096,41 @@ def _build_events(snap_before, snap_after, state, action_a, action_b, pa_before,
     events = []
     n = len(state.team_a)
 
-    # A 方伤害事件
-    ca = snap_before.get("current_a", 0)
-    hp_before = snap_before.get(f"a_{ca}_hp", 0)
-    hp_after  = snap_after.get(f"a_{ca}_hp", 0)
-    if hp_before - hp_after > 0:
-        events.append({"type": "hit", "side": "a", "dmg": hp_before - hp_after})
+    # A 方伤害事件 —— 用 snap_after 的 current 来找正确的精灵（换人后检测新精灵）
+    ca_after = snap_after.get("current_a", snap_before.get("current_a", 0))
+    ca_before = snap_before.get("current_a", 0)
+    # 如果换人了，旧精灵HP不变，检测新精灵的HP差
+    if ca_after != ca_before:
+        hp_before_val = snap_before.get(f"a_{ca_after}_hp", snap_after.get(f"a_{ca_after}_hp", 0))
+        hp_after_val = snap_after.get(f"a_{ca_after}_hp", 0)
+    else:
+        hp_before_val = snap_before.get(f"a_{ca_after}_hp", 0)
+        hp_after_val = snap_after.get(f"a_{ca_after}_hp", 0)
+    dmg_a = hp_before_val - hp_after_val
+    if dmg_a > 0:
+        # 查攻击方(B)的属性克制信息
+        eff_a = state.team_b[cb_after].ability_state.pop("_last_effectiveness", 1.0) if cb_after < len(state.team_b) else 1.0
+        evt = {"type": "hit", "side": "a", "dmg": dmg_a}
+        if eff_a >= 2.0: evt["eff"] = "super"
+        elif eff_a <= 0.5 and eff_a > 0: evt["eff"] = "resist"
+        events.append(evt)
 
     # B 方伤害事件
-    cb = snap_before.get("current_b", 0)
-    hp_before = snap_before.get(f"b_{cb}_hp", 0)
-    hp_after  = snap_after.get(f"b_{cb}_hp", 0)
-    if hp_before - hp_after > 0:
-        events.append({"type": "hit", "side": "b", "dmg": hp_before - hp_after})
+    cb_after = snap_after.get("current_b", snap_before.get("current_b", 0))
+    cb_before = snap_before.get("current_b", 0)
+    if cb_after != cb_before:
+        hp_before_val = snap_before.get(f"b_{cb_after}_hp", snap_after.get(f"b_{cb_after}_hp", 0))
+        hp_after_val = snap_after.get(f"b_{cb_after}_hp", 0)
+    else:
+        hp_before_val = snap_before.get(f"b_{cb_after}_hp", 0)
+        hp_after_val = snap_after.get(f"b_{cb_after}_hp", 0)
+    dmg_b = hp_before_val - hp_after_val
+    if dmg_b > 0:
+        eff_b = state.team_a[ca_after].ability_state.pop("_last_effectiveness", 1.0) if ca_after < len(state.team_a) else 1.0
+        evt = {"type": "hit", "side": "b", "dmg": dmg_b}
+        if eff_b >= 2.0: evt["eff"] = "super"
+        elif eff_b <= 0.5 and eff_b > 0: evt["eff"] = "resist"
+        events.append(evt)
 
     # 防御技能（damage_reduction > 0）→ 盾牌事件
     if action_a[0] >= 0:
@@ -1225,6 +1277,10 @@ async def team_page():
 
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+ICONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "spirit_icons")
+if os.path.exists(ICONS_DIR):
+    app.mount("/icons", StaticFiles(directory=ICONS_DIR), name="icons")
 
 if __name__ == "__main__":
     import uvicorn

@@ -271,6 +271,8 @@ class DamageCalculator:
         power_mult_buff = getattr(attacker, "power_multiplier", 1.0)
 
         damage = base * eff * stab * weather_mult * hits * power_mult_buff
+        # 保存属性克制到攻击方临时状态，供前端事件使用
+        attacker.ability_state["_last_effectiveness"] = eff
         return max(1, int(damage))
 
 
@@ -917,7 +919,23 @@ def _execute_with_counter(state: BattleState, team: str, action: Action,
 
     # 汇合聚能
     if action[0] == -1:
-        current.gain_energy(5)
+        # 检查对方技能是否有打断效果（打断可阻止聚能回能）
+        enemy_skill_obj = None
+        if enemy_action[0] >= 0 and not enemy.is_fainted:
+            enemy_skill_obj = enemy.skills[enemy_action[0]] if enemy_action[0] < len(enemy.skills) else None
+        interrupted = False
+        if enemy_skill_obj and hasattr(enemy_skill_obj, "effects"):
+            for se in (enemy_skill_obj.effects or []):
+                from src.effect_models import SkillEffect as _SE2, SkillTiming as _ST2
+                if isinstance(se, _SE2) and se.timing == _ST2.ON_COUNTER:
+                    for t in se.effects:
+                        if t.type == E.INTERRUPT:
+                            interrupted = True
+                            break
+                if interrupted:
+                    break
+        if not interrupted:
+            current.gain_energy(5)
         # 木桶状态：聚能也算主动行动，清除木桶
         current.ability_state.pop("barrel_active", None)
         return
@@ -1243,15 +1261,21 @@ def _resolve_enemy_counters(state, current, enemy, skill, enemy_skill,
 
 
 def _apply_ability_damage_reduction(state, current, enemy, skill, damage, enemy_team) -> int:
-    """应用特性减伤（秩序鱿墨等），返回减伤后的伤害值。"""
+    """应用特性减伤（秩序鱿墨等），返回减伤后的伤害值。
+    同时处理化茧特性：受致命伤时+1萌化并免死（damage 降为 enemy.current_hp - 1）。
+    """
     if enemy.ability_effects and damage > 0:
         ability_ctx = {"skill": skill, "damage": damage}
         ability_result = EffectExecutor.execute_ability(
             state, enemy, current, Timing.ON_TAKE_HIT,
             enemy.ability_effects, enemy_team, ability_ctx,
         )
+        # 普通减伤（秩序鱿墨等）
         if ability_result.get("damage_reduction", 0) > 0:
             damage = int(damage * (1.0 - ability_result["damage_reduction"]))
+        # 化茧免死：handler 已将 enemy.current_hp 设为 1，此处把伤害压到 0
+        if ability_result.get("blocked_lethal"):
+            damage = 0
     return damage
 
 
@@ -1424,9 +1448,11 @@ def _is_first_action(state: BattleState, team: str, action: Action,
 
 
 def get_priority(state: BattleState, team: str, action: Action) -> int:
-    """获取先手等级。默认 0，+1 必定先于 0，-1 慢于 0。"""
+    """获取先手等级。换人优先级最高(+99)，聚能正常(0)，技能看先手加成。"""
+    if action[0] == -2:
+        return 99  # 换人优先级最高，总是在技能之前执行
     if action[0] < 0:
-        return 0
+        return 0   # 聚能正常优先级
     team_list = state.team_a if team == "a" else state.team_b
     idx = state.current_a if team == "a" else state.current_b
     if action[0] >= len(team_list[idx].skills):
@@ -1506,6 +1532,11 @@ class TeamBuilder:
                     p.ability_state["fixed_hit_count_all"] = tag.params.get("count", 2)
                 elif tag.type == E.HIT_COUNT_PER_POISON:
                     p.ability_state["hit_count_per_poison"] = True
+                # ── 萌化被动 ──
+                elif tag.type == E.CUTE_NO_CAP:
+                    p.ability_state["cute_no_cap"] = True
+                elif tag.type == E.CUTE_HIT_PER_STACK:
+                    p.ability_state["cute_hit_per_stack"] = tag.params.get("per", 2)
         return p
 
     @staticmethod
