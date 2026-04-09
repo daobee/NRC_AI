@@ -340,21 +340,27 @@ def get_actions(state: BattleState, team: str) -> List[Action]:
 def auto_switch(state: BattleState, switch_cb_a=None, switch_cb_b=None) -> None:
     """
     被动换人：精灵倒下后选择下一只上场精灵，不占用行动回合。
-    
-    switch_cb_a/b: 可选的回调函数 (state, team_list, alive_indices) -> int
-      返回要换上的精灵索引。若为 None 则默认选第一个存活精灵。
+
+    A方（玩家）死亡：先用 alive[0] 占位，同时写入 pending_switch_requests
+    让 server.py 在回合结束后弹出选人面板（异步等待玩家选择）。
+    B方（AI）死亡：调用 switch_cb_b 让 AI 选择，无 callback 则选 alive[0]。
     """
     if state.team_a[state.current_a].is_fainted:
         alive = [i for i, p in enumerate(state.team_a) if not p.is_fainted]
         if alive:
             state.team_a[state.current_a].on_switch_out()
-            if switch_cb_a and len(alive) > 1:
-                chosen = switch_cb_a(state, state.team_a, alive)
-                state.current_a = chosen if chosen in alive else alive[0]
-            else:
-                state.current_a = alive[0]
-            # 印记入场效果
+            # 暂时换上 alive[0]，server.py 会通过 pending_switch_requests 让玩家选
+            state.current_a = alive[0]
+            if len(alive) > 1:
+                # 多于1只存活 → 记录待选请求，让前端弹选人面板
+                state.pending_switch_requests.append({
+                    "team": "a",
+                    "reason": "fainted",
+                    "alive": alive,
+                })
+            # 印记入场效果（用占位精灵触发，玩家选完后再触发一次）
             _apply_mark_on_enter(state, "a", state.team_a[state.current_a])
+
     if state.team_b[state.current_b].is_fainted:
         alive = [i for i, p in enumerate(state.team_b) if not p.is_fainted]
         if alive:

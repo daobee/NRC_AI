@@ -986,54 +986,48 @@ async def receive_player_action(ws: WebSocket, msg: dict):
     # ── 生成前端动画事件 ──
     events = _build_events(snap_before, snap_after, state, action_a, action_b, pa, pb)
 
-    # ── 处理应对触发的强制换人（泡沫幻影等） ──
+    # ── 处理死亡/脱离触发的强制换人（不占回合，玩家手动选）──
     pending = state.pending_switch_requests
     if pending:
         state.pending_switch_requests = []
         for req in pending:
+            reason = req.get("reason", "force_switch")
             if req["team"] == "a":
                 # 玩家方需要手动选择
-                session.add_log(f"  🔄 泡沫幻影应对成功！选择换上哪只精灵")
+                if reason == "fainted":
+                    session.add_log(f"  💀 精灵倒下！选择下一只上场精灵（不占回合）")
+                else:
+                    session.add_log(f"  🔄 脱离成功！选择换上哪只精灵（不占回合）")
                 await ws.send_text(json.dumps(serialize_state(
                     state, waiting=True, events=events,
                     force_switch_prompt=True,
                 )))
-                events = []  # 事件已发送，清空避免重复
-                # 等待玩家发送换人消息（BUG #2 FIX: Add 15s timeout to prevent indefinite wait）
+                events = []
                 try:
-                    raw = await asyncio.wait_for(ws.receive_text(), timeout=15.0)
+                    raw = await asyncio.wait_for(ws.receive_text(), timeout=30.0)
                     msg2 = json.loads(raw)
                 except asyncio.TimeoutError:
-                    session.add_log(f"  ⏱️  玩家选择换人超时（>15s），AI自动选择")
-                    # 超时，AI代选
-                    chosen = _ai_switch_callback(state, state.team_a, req["alive"])
+                    session.add_log(f"  ⏱️  玩家选择超时，自动选第一只")
+                    chosen = req["alive"][0]
                     msg2 = {"type": "switch", "index": chosen}
                 except json.JSONDecodeError:
-                    session.add_log(f"  ❌ 换人消息格式错误，AI自动选择")
-                    chosen = _ai_switch_callback(state, state.team_a, req["alive"])
+                    chosen = req["alive"][0]
                     msg2 = {"type": "switch", "index": chosen}
-                
+
                 if msg2.get("type") == "switch" and msg2.get("index") in req["alive"]:
                     chosen = msg2["index"]
-                    if req["team"] == "a":
-                        state.current_a = chosen
-                    else:
-                        state.current_b = chosen
-                    new_p = state.team_a[chosen] if req["team"] == "a" else state.team_b[chosen]
+                    state.current_a = chosen
+                    new_p = state.team_a[chosen]
                     session.add_log(f"  ↩️  换上 {new_p.name}")
                     # 触发入场特性
-                    from src.battle import _trigger_battle_start_effects
-                    _trigger_battle_start_effects(state)
-                    EffectExecutor.execute_agility_entry(
-                        state, new_p,
-                        state.team_b[state.current_b] if req["team"] == "a" else state.team_a[state.current_a],
-                        req["team"],
-                    )
+                    enemy_p = state.team_b[state.current_b]
+                    from src.battle import _apply_mark_on_enter
+                    _apply_mark_on_enter(state, "a", new_p)
+                    EffectExecutor.execute_agility_entry(state, new_p, enemy_p, "a")
                     if new_p.ability_effects:
                         EffectExecutor.execute_ability(
-                            state, new_p,
-                            state.team_b[state.current_b] if req["team"] == "a" else state.team_a[state.current_a],
-                            Timing.ON_ENTER, new_p.ability_effects, req["team"],
+                            state, new_p, enemy_p,
+                            Timing.ON_ENTER, new_p.ability_effects, "a",
                         )
             else:
                 # AI方由 AI 决策
@@ -1041,8 +1035,15 @@ async def receive_player_action(ws: WebSocket, msg: dict):
                 state.current_b = chosen
                 new_p = state.team_b[chosen]
                 session.add_log(f"  🤖 AI 换上 {new_p.name}")
-                from src.battle import _trigger_battle_start_effects
-                _trigger_battle_start_effects(state)
+                # AI方入场特性
+                enemy_p = state.team_a[state.current_a]
+                from src.battle import _apply_mark_on_enter
+                _apply_mark_on_enter(state, "b", new_p)
+                if new_p.ability_effects:
+                    EffectExecutor.execute_ability(
+                        state, new_p, enemy_p,
+                        Timing.ON_ENTER, new_p.ability_effects, "b",
+                    )
 
     winner = check_winner(state)
     if winner:
