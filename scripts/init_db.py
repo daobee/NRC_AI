@@ -343,10 +343,16 @@ def print_stats(conn):
 
 
 def main():
-    # Delete old DB
+    # Backup old DB if exists (keep only one backup)
     if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        print(f"[OK] Removed old {DB_PATH}")
+        backup_path = DB_PATH + ".bak"
+        # Remove old backup if exists
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+            print(f"[OK] Removed old backup {backup_path}")
+        # Rename current DB to backup
+        os.rename(DB_PATH, backup_path)
+        print(f"[OK] Backed up {DB_PATH} → {backup_path}")
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
