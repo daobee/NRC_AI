@@ -19,6 +19,7 @@ venv/
 # Database runtime files
 data/nrc.db-shm
 data/nrc.db-wal
+data/nrc.db.bak
 data/crawl_progress.json
 data/nrc_battle.db
 
